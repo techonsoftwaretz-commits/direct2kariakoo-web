@@ -35,6 +35,7 @@ export default function CustomerRegisterForm({ onSuccess }: { onSuccess?: () => 
     try {
       const payload = {
         ...form,
+        password_confirmation: form.password,
         latitude: coordinates?.lat,
         longitude: coordinates?.lng,
       };
