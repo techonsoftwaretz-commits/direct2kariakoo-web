@@ -8,7 +8,14 @@ import { ShoppingCart, CheckCircle2, Star } from "lucide-react";
 import Header from "@/app/user/components/Header";
 
 /* -------------------------------------------------------------------------- */
-/* 🧩 Interfaces */
+/* 🧠 In-memory cache to avoid refetch on navigation                            */
+/* -------------------------------------------------------------------------- */
+const memoryCache: Record<string, any[]> = {};
+const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
+const timestampKey = (id: string) => `d2k_products_${id}_timestamp`;
+
+/* -------------------------------------------------------------------------- */
+/* 🧩 Interfaces                                                               */
 /* -------------------------------------------------------------------------- */
 interface Product {
   id: number;
@@ -22,7 +29,7 @@ interface Product {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🟢 Inner Component */
+/* 🟢 Inner Component                                                          */
 /* -------------------------------------------------------------------------- */
 function SubcategoryProductsInner() {
   const searchParams = useSearchParams();
@@ -35,40 +42,53 @@ function SubcategoryProductsInner() {
   const [error, setError] = useState("");
 
   /* -------------------------------------------------------------------------- */
-  /* 🟢 Fetch products for subcategory (with cache) */
+  /* ⚙️ Load products with smart caching                                         */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     if (!subcategoryId) return;
 
     const cacheKey = `d2k_products_${subcategoryId}`;
+    const now = Date.now();
 
-    const loadFromCache = () => {
-      try {
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
+    /** ✅ 1. Try from memory cache first (fastest) */
+    if (memoryCache[subcategoryId]) {
+      setProducts(memoryCache[subcategoryId]);
+      setLoading(false);
+    }
+
+    /** ✅ 2. Try from localStorage if no memory cache */
+    else {
+      const cached = localStorage.getItem(cacheKey);
+      const timestamp = Number(localStorage.getItem(timestampKey(subcategoryId)));
+
+      if (cached && timestamp && now - timestamp < CACHE_TTL) {
+        try {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             setProducts(parsed);
-            setLoading(false); // show instantly
+            memoryCache[subcategoryId] = parsed;
+            setLoading(false);
           }
+        } catch {
+          console.warn("⚠️ Cache parse failed, skipping...");
         }
-      } catch (err) {
-        console.warn("⚠️ Failed to load cached products:", err);
       }
-    };
+    }
 
+    /** ✅ 3. Fetch fresh data in background */
     const fetchProducts = async () => {
       try {
         const res = await axios.get(
           `${process.env.NEXT_PUBLIC_API_URL}/subcategories/${subcategoryId}/products`
         );
-
         const data = Array.isArray(res.data.products)
           ? res.data.products
           : [];
 
         setProducts(data);
+        memoryCache[subcategoryId] = data;
         localStorage.setItem(cacheKey, JSON.stringify(data));
+        localStorage.setItem(timestampKey(subcategoryId), now.toString());
 
         if (res.data.subcategory?.name) {
           setSubcategoryName(res.data.subcategory.name);
@@ -82,15 +102,11 @@ function SubcategoryProductsInner() {
       }
     };
 
-    // ✅ Step 1: show cached data instantly
-    loadFromCache();
-
-    // ✅ Step 2: fetch fresh data in background
     fetchProducts();
   }, [subcategoryId]);
 
   /* -------------------------------------------------------------------------- */
-  /* 🟡 Loading & Error States */
+  /* 🟡 Loading & Error States                                                  */
   /* -------------------------------------------------------------------------- */
   if (loading && products.length === 0)
     return (
@@ -105,11 +121,10 @@ function SubcategoryProductsInner() {
     );
 
   /* -------------------------------------------------------------------------- */
-  /* 🟢 MAIN RENDER */
+  /* 🟢 MAIN RENDER                                                             */
   /* -------------------------------------------------------------------------- */
   return (
     <>
-      {/* ✅ Global Header */}
       <Header
         onCategorySelect={(cat) => {
           if (cat?.id) {
@@ -173,7 +188,7 @@ function SubcategoryProductsInner() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🛍️ Product Card Component */
+/* 🛍️ Product Card Component                                                  */
 /* -------------------------------------------------------------------------- */
 function ProductCard({ product }: { product: Product }) {
   const router = useRouter();
@@ -327,7 +342,7 @@ function ProductCard({ product }: { product: Product }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Suspense Wrapper */
+/* ✅ Suspense Wrapper                                                        */
 /* -------------------------------------------------------------------------- */
 export default function SubcategoryProductsPage() {
   return (
@@ -344,7 +359,7 @@ export default function SubcategoryProductsPage() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🌈 Fade Animation for Smooth Load */
+/* 🌈 Fade Animation for Smooth Load                                          */
 /* -------------------------------------------------------------------------- */
 if (typeof window !== "undefined") {
   const style = document.createElement("style");
@@ -353,7 +368,7 @@ if (typeof window !== "undefined") {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
-  .animate-fadeIn { animation: fadeIn 0.3s ease-in-out; }
+  .animate-fadeIn { animation: fadeIn 0.25s ease-in-out; }
   `;
   document.head.appendChild(style);
 }
