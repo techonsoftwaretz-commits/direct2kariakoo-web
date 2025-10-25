@@ -14,11 +14,6 @@ const nextConfig = {
         pathname: "/**",
       },
       {
-        protocol: "https",
-        hostname: "najocreatives.co.tz",
-        pathname: "/**",
-      },
-      {
         protocol: "http",
         hostname: "127.0.0.1",
         port: "8000",
