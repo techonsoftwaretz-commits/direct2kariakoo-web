@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+/* =========
+   Root Theme Variables
+   ========= */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  --accent: #ffde59; /* 🌟 Direct2Kariakoo yellow */
+  --text-dark: #232742;
+  --border-color: #e5e7eb;
+  --gray-bg: #f6f6f6;
+  --brand-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --transition: all 0.25s ease;
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --gray-bg: #111;
+    --border-color: #222;
+  }
+}
+
+/* Tailwind Inline Theme Config */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* =========
+   Global Base
+   ========= */
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+  transition: var(--transition);
+  min-height: 100vh;
+}
+
+/* Scrollbar cleanup */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+/* =========
+   Buttons
+   ========= */
+.btn-primary {
+  @apply bg-[var(--accent)] text-black font-semibold rounded-md py-2.5 px-5 shadow-sm hover:bg-yellow-300 transition disabled:opacity-60 disabled:cursor-not-allowed;
+}
+
+.btn-outline {
+  @apply border border-gray-300 text-gray-800 py-2 px-5 rounded-md hover:bg-gray-50 transition;
+}
+
+/* =========
+   Cart Layout
+   ========= */
+.cart-container {
+  @apply max-w-7xl mx-auto p-4 lg:p-6 flex flex-col lg:flex-row gap-6;
+}
+
+.cart-items {
+  @apply flex-1 bg-white rounded-lg shadow-sm p-5;
+}
+
+.cart-summary {
+  @apply bg-white rounded-lg shadow-sm p-5 lg:sticky lg:top-8 h-max;
+}
+
+/* =========
+   Cart Item Card
+   ========= */
+.cart-item {
+  @apply flex flex-col sm:flex-row items-center gap-4 border border-[var(--border-color)] rounded-lg p-4 transition hover:shadow-md;
+}
+
+.cart-item img {
+  @apply rounded-md border border-gray-200 object-cover;
+}
+
+.cart-item-info {
+  @apply flex-1 w-full sm:w-auto;
+}
+
+.cart-item-name {
+  @apply font-semibold text-base text-[var(--text-dark)];
+}
+
+.cart-item-price {
+  @apply font-semibold text-black mt-1;
+}
+
+.cart-item-actions {
+  @apply flex items-center gap-2 mt-2 sm:mt-0;
+}
+
+.cart-qty-btn {
+  @apply px-2 py-1 border border-gray-300 rounded hover:bg-gray-100 transition;
+}
+
+.remove-btn {
+  @apply text-red-500 hover:text-red-700 text-sm font-medium;
+}
+
+/* =========
+   Summary Box
+   ========= */
+.summary-box {
+  @apply bg-white rounded-lg p-5 shadow-sm border border-gray-100;
+}
+
+.summary-header {
+  @apply text-lg font-semibold mb-3;
+}
+
+.summary-line {
+  @apply flex justify-between text-sm text-gray-600 mb-1;
+}
+
+.summary-total {
+  @apply flex justify-between text-lg font-bold text-black mt-2;
+}
+
+/* =========
+   Checkout Page
+   ========= */
+.checkout-page {
+  @apply min-h-screen bg-[var(--gray-bg)] py-10 px-4 flex justify-center;
+}
+
+.checkout-card {
+  @apply bg-white rounded-lg shadow-lg p-6 w-full max-w-md;
+}
+
+.checkout-card h2 {
+  @apply text-xl font-semibold mb-6 text-center text-[var(--text-dark)];
+}
+
+.checkout-input {
+  @apply w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[var(--accent)];
+}
+
+.checkout-total {
+  @apply text-center text-lg font-semibold mt-4 text-[var(--accent)];
+}
+
+/* =========
+   Responsive tweaks
+   ========= */
+@media (max-width: 768px) {
+  .cart-container {
+    @apply flex-col gap-3;
+  }
+  .cart-items {
+    @apply shadow-none border-none p-2 bg-[var(--gray-bg)];
+  }
+  .cart-item {
+    @apply bg-white shadow-sm;
+  }
+  .cart-summary {
+    @apply fixed bottom-0 left-0 right-0 rounded-t-2xl shadow-2xl border-t border-gray-200 p-4 bg-white z-50;
+  }
+}
