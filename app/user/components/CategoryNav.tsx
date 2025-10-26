@@ -21,7 +21,7 @@ export default function CategoryNav({
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
 
-  // 🔹 Keep the selected category always visible
+  // ✅ Keep selected visible
   useEffect(() => {
     if (selectedCategory !== null) {
       const el = document.getElementById(`cat-${selectedCategory}`);
@@ -29,7 +29,7 @@ export default function CategoryNav({
     }
   }, [selectedCategory]);
 
-  // 🔹 Check scroll visibility
+  // ✅ Scroll visibility
   const checkScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -37,7 +37,7 @@ export default function CategoryNav({
     setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 5);
   };
 
-  // 🔹 Scroll handler
+  // ✅ Scroll handler
   const scroll = (dir: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
@@ -75,10 +75,10 @@ export default function CategoryNav({
         </button>
       )}
 
-      {/* Categories */}
+      {/* ✅ Categories — scrollbar completely hidden */}
       <div
         ref={scrollRef}
-        className="flex overflow-x-auto scrollbar-hide gap-6 text-gray-800 font-semibold text-sm py-2 px-10 scroll-smooth"
+        className="flex overflow-x-auto no-scrollbar gap-6 text-gray-800 font-semibold text-sm py-2 px-10 scroll-smooth"
       >
         {categories.map((cat) => {
           const isActive =
