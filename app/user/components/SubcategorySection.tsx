@@ -16,14 +16,10 @@ interface Props {
   onSelectSubcategory: (id: number) => void;
 }
 
-/* ------------------------------- 🧠 Cache Setup ------------------------------ */
 const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12h
 const memoryCache = new Map<number, { data: Subcategory[]; time: number }>();
 
-export default function SubcategorySection({
-  categoryId,
-  onSelectSubcategory,
-}: Props) {
+export default function SubcategorySection({ categoryId, onSelectSubcategory }: Props) {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,13 +28,12 @@ export default function SubcategorySection({
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
 
-  /* -------------------------- 🧠 Load Cached Data First -------------------------- */
+  /* ------------------ Load & Cache ------------------ */
   useEffect(() => {
     if (!categoryId) return;
     const cacheKey = `subcategory_cache_${categoryId}`;
     const now = Date.now();
 
-    // 🪄 Check memory cache first
     if (memoryCache.has(categoryId)) {
       const { data, time } = memoryCache.get(categoryId)!;
       if (now - time < CACHE_EXPIRY_MS) {
@@ -52,7 +47,6 @@ export default function SubcategorySection({
       }
     }
 
-    // 🪄 Check localStorage cache second
     const localCache = localStorage.getItem(cacheKey);
     if (localCache) {
       try {
@@ -70,7 +64,6 @@ export default function SubcategorySection({
       } catch {}
     }
 
-    // 🕐 Otherwise, fetch fresh
     setLoading(true);
     axios
       .get(`${process.env.NEXT_PUBLIC_API_URL}/categories/${categoryId}/subcategories`)
@@ -89,7 +82,7 @@ export default function SubcategorySection({
       .finally(() => setLoading(false));
   }, [categoryId]);
 
-  /* -------------------------- 🧭 Scroll Handlers ---------------------------- */
+  /* ------------------ Scroll Logic ------------------ */
   const checkScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -117,13 +110,13 @@ export default function SubcategorySection({
     };
   }, []);
 
-  /* -------------------------- 💠 Loading States ---------------------------- */
+  /* ------------------ Loading Skeleton ------------------ */
   if (loading)
     return (
-      <div className="flex gap-4 overflow-hidden px-6 py-8">
+      <div className="grid grid-cols-4 sm:flex sm:overflow-hidden px-6 py-6 gap-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex flex-col items-center gap-2 animate-pulse">
-            <div className="w-[80px] h-[80px] rounded-full bg-gray-200" />
+            <div className="w-[65px] h-[65px] rounded-full bg-gray-200" />
             <div className="h-3 w-16 bg-gray-200 rounded" />
           </div>
         ))}
@@ -137,24 +130,23 @@ export default function SubcategorySection({
       </div>
     );
 
-  /* ------------------------------ 🧩 Render -------------------------------- */
+  /* ------------------ UI ------------------ */
   return (
-    <div className="relative bg-white pt-6 pb-10 px-4">
-      {/* ◀ Left Arrow */}
+    <div className="relative bg-white pt-4 pb-10 px-4">
+      {/* ◀ Arrow for desktop */}
       {canScrollLeft && (
         <button
           onClick={() => scroll("left")}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-white border border-gray-200 rounded-full shadow-md w-8 h-8 flex items-center justify-center hover:bg-gray-100"
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-white border border-gray-200 rounded-full shadow-md w-8 h-8 hidden sm:flex items-center justify-center hover:bg-gray-100"
         >
           <ChevronLeft className="w-5 h-5 text-gray-600" />
         </button>
       )}
 
-      {/* 🔹 Scroll Container */}
+      {/* 🔹 Scrollable on desktop, 2-row grid on mobile */}
       <div
         ref={scrollRef}
-        className="flex gap-8 overflow-x-auto scroll-smooth scrollbar-hide px-4 items-center"
-        style={{ scrollPadding: "0 1rem" }}
+        className="grid grid-cols-4 gap-6 sm:flex sm:gap-8 sm:overflow-x-auto sm:scroll-smooth sm:scrollbar-hide items-center"
       >
         {subcategories.map((sub) => {
           const isActive = selectedId === sub.id;
@@ -165,13 +157,13 @@ export default function SubcategorySection({
                 setSelectedId(sub.id);
                 onSelectSubcategory(sub.id);
               }}
-              className={`flex flex-col items-center flex-shrink-0 w-[90px] sm:w-[100px] focus:outline-none transition-transform duration-200 ${
+              className={`flex flex-col items-center text-center flex-shrink-0 transition-transform duration-200 ${
                 isActive ? "scale-[1.05]" : "hover:scale-[1.03]"
               }`}
             >
-              {/* 🖼️ Circular Icon */}
+              {/* 🖼️ Icon */}
               <div
-                className={`w-[80px] h-[80px] rounded-full border flex items-center justify-center overflow-hidden shadow-sm transition-all bg-white ${
+                className={`w-[65px] h-[65px] rounded-full border flex items-center justify-center overflow-hidden shadow-sm transition-all bg-white ${
                   isActive
                     ? "border-[#008080] ring-2 ring-[#B2DFDB]"
                     : "border-gray-200 hover:border-[#008080]"
@@ -181,18 +173,17 @@ export default function SubcategorySection({
                   <Image
                     src={sub.icon_image_url}
                     alt={sub.name}
-                    width={80}
-                    height={80}
+                    width={65}
+                    height={65}
                     className="object-cover w-full h-full"
                   />
                 ) : (
-                  <span className="text-2xl">🛍️</span>
+                  <span className="text-xl">🛍️</span>
                 )}
               </div>
 
-              {/* 🏷 Label */}
               <span
-                className={`mt-3 text-[13px] font-semibold text-center leading-tight ${
+                className={`mt-2 text-[12px] sm:text-[13px] font-semibold leading-tight ${
                   isActive ? "text-[#008080]" : "text-gray-800"
                 }`}
               >
@@ -203,18 +194,18 @@ export default function SubcategorySection({
         })}
       </div>
 
-      {/* ▶ Right Arrow */}
+      {/* ▶ Arrow for desktop */}
       {canScrollRight && (
         <button
           onClick={() => scroll("right")}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-white border border-gray-200 rounded-full shadow-md w-8 h-8 flex items-center justify-center hover:bg-gray-100"
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-white border border-gray-200 rounded-full shadow-md w-8 h-8 hidden sm:flex items-center justify-center hover:bg-gray-100"
         >
           <ChevronRight className="w-5 h-5 text-gray-600" />
         </button>
       )}
 
-      {/* 🔘 Scroll Bar Indicator */}
-      <div className="absolute bottom-3 left-4 right-4 h-[3px] bg-gray-200 rounded-full overflow-hidden">
+      {/* Scroll indicator for desktop */}
+      <div className="hidden sm:block absolute bottom-3 left-4 right-4 h-[3px] bg-gray-200 rounded-full overflow-hidden">
         <div
           className="h-full bg-[#008080] transition-all duration-200"
           style={{ width: `${scrollProgress}%` }}
