@@ -30,7 +30,7 @@ export default function BannerCarousel() {
       .catch((err) => console.error("❌ Failed to load banners:", err));
   }, []);
 
-  /* ✅ Detect mobile */
+  /* ✅ Detect mobile screen */
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     handleResize();
@@ -38,7 +38,7 @@ export default function BannerCarousel() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  /* ✅ Auto-slide every 4s */
+  /* ✅ Auto slide */
   useEffect(() => {
     if (isPaused || banners.length === 0) return;
     const interval = setInterval(() => {
@@ -63,12 +63,12 @@ export default function BannerCarousel() {
   if (banners.length === 0) return null;
 
   /* -------------------------------------------------------------------------- */
-  /* 💻 DESKTOP: Classic full-width fade carousel with nav arrows               */
+  /* 💻 DESKTOP: Full-width banner carousel with fade & buttons                 */
   /* -------------------------------------------------------------------------- */
   if (!isMobile) {
     return (
       <div
-        className="relative w-full max-w-[1400px] mx-auto overflow-hidden bg-white shadow-sm select-none rounded-xl"
+        className="relative w-full max-w-[1400px] mx-auto overflow-hidden select-none rounded-xl"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
       >
@@ -120,13 +120,13 @@ export default function BannerCarousel() {
         </button>
 
         {/* ✅ Dots */}
-        <div className="absolute bottom-3 left-0 right-0 z-30 flex justify-center gap-2 backdrop-blur-[2px] bg-white/20 py-[2px]">
+        <div className="absolute bottom-3 left-0 right-0 z-30 flex justify-center gap-2">
           {banners.map((_, i) => (
             <div
               key={i}
               onClick={() => setCurrent(i)}
               className={`h-[3px] rounded-full cursor-pointer transition-all duration-300 ${
-                i === current ? "bg-yellow-400 w-6" : "bg-gray-200 w-4 hover:bg-gray-300"
+                i === current ? "bg-yellow-400 w-6" : "bg-gray-300 w-4 hover:bg-gray-400"
               }`}
             />
           ))}
@@ -136,13 +136,13 @@ export default function BannerCarousel() {
   }
 
   /* -------------------------------------------------------------------------- */
-  /* 📱 MOBILE: Noon-style centered cards with smaller spacing                  */
+  /* 📱 MOBILE: Swipeable noon-style with small spacing                         */
   /* -------------------------------------------------------------------------- */
   return (
-    <div className="w-full bg-white py-3 select-none">
+    <div className="w-full select-none">
       <div
         ref={containerRef}
-        className="flex gap-2 overflow-x-auto px-3 scrollbar-hide snap-x snap-mandatory scroll-smooth"
+        className="flex gap-2 overflow-x-auto px-2 scrollbar-hide snap-x snap-mandatory scroll-smooth"
       >
         {banners.map((banner, index) => {
           const isActive = index === current;
@@ -154,13 +154,13 @@ export default function BannerCarousel() {
                 isActive ? "scale-100 opacity-100" : "scale-90 opacity-70"
               }`}
               style={{
-                width: "85%",
-                minWidth: "85%",
+                width: "90%",
+                minWidth: "90%",
                 transformOrigin: "center",
               }}
             >
               <a href={banner.link || "#"} target="_blank" rel="noopener noreferrer">
-                <div className="relative w-full h-[160px] rounded-2xl overflow-hidden shadow-lg">
+                <div className="relative w-full h-[160px] rounded-xl overflow-hidden shadow-md">
                   <Image
                     src={
                       banner.image.startsWith("http")
@@ -180,7 +180,7 @@ export default function BannerCarousel() {
       </div>
 
       {/* ✅ Small dots */}
-      <div className="flex justify-center mt-3 gap-2">
+      <div className="flex justify-center mt-2 gap-2">
         {banners.map((_, i) => (
           <div
             key={i}
