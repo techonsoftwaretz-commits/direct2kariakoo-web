@@ -6,6 +6,7 @@ import Image from "next/image";
 import SubcategorySection from "@/app/user/components/SubcategorySection";
 import ProductCard from "@/app/user/components/ProductCard";
 import Header from "../components/Header";
+import BannerCarousel from "@/app/user/components/BannerCarousel"; // ✅ Added
 
 interface Product {
   id: number;
@@ -31,25 +32,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [productLoading, setProductLoading] = useState(false);
   const [error, setError] = useState("");
-  const [timeLeft, setTimeLeft] = useState(7 * 60 * 60 + 37 * 60 + 26);
 
-  // Countdown timer
-  useEffect(() => {
-    const timer = setInterval(
-      () => setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0)),
-      1000
-    );
-    return () => clearInterval(timer);
-  }, []);
-
-  const formatTimeParts = (seconds: number) => {
-    const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
-    const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
-    const s = String(seconds % 60).padStart(2, "0");
-    return [h, m, s];
-  };
-
-  // Fetch categories
+  // 🧠 Fetch categories
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -67,7 +51,7 @@ export default function HomePage() {
     fetchCategories();
   }, []);
 
-  // Restore selected category from localStorage
+  // 🧠 Restore selected category from localStorage
   useEffect(() => {
     const storedCat = localStorage.getItem("selectedCategory");
     if (storedCat) {
@@ -77,7 +61,7 @@ export default function HomePage() {
     }
   }, []);
 
-  // Fetch products by subcategory
+  // 🧠 Fetch products by subcategory
   useEffect(() => {
     if (!selectedSubcategory || selectedSubcategory === 0) {
       setProducts([]);
@@ -94,6 +78,7 @@ export default function HomePage() {
       .finally(() => setProductLoading(false));
   }, [selectedSubcategory]);
 
+  // 🧠 Loading/Error Handling
   if (loading)
     return (
       <div className="flex justify-center items-center h-screen bg-gray-50">
@@ -108,94 +93,24 @@ export default function HomePage() {
       </div>
     );
 
-  const [h, m, s] = formatTimeParts(timeLeft);
-
   return (
-    <div className="pb-20 bg-gray-50 min-h-screen">
+    <main className="bg-gray-50 min-h-screen pb-20">
       {/* ✅ Top Header */}
       <Header
         onCategorySelect={(cat) => {
-          if (!cat || selectedCategory?.id === cat.id) return; // prevent same ID re-set
+          if (!cat || selectedCategory?.id === cat.id) return;
           setSelectedCategory(cat);
         }}
         onSubcategorySelect={(id) => {
-          if (!id || selectedSubcategory === id) return; // prevent loop
+          if (!id || selectedSubcategory === id) return;
           setSelectedSubcategory(id);
         }}
       />
 
-      {/* ✅ AliExpress-style compact promo banner */}
-      <section className="flex justify-center mt-3">
-        <div
-          className="
-            flex items-center justify-between 
-            bg-gradient-to-r from-[#FFE970] to-[#FFD100]
-            rounded-2xl shadow-sm border border-yellow-300
-            w-[95%] sm:w-[90%] md:w-[85%]
-            px-4 sm:px-6 py-3
-            transition-all duration-300
-          "
-        >
-          {/* LEFT SIDE: Text + Icons */}
-          <div className="flex flex-col justify-center flex-1 text-gray-900">
-            <h3 className="text-[13px] sm:text-[16px] font-bold flex items-center gap-1">
-              Welcome to{" "}
-              <span className="text-[#1E73BE] font-extrabold">
-                Direct2Kariakoo
-              </span>
-            </h3>
-
-            <div className="flex items-center gap-4 mt-1 text-[11px] sm:text-[13px]">
-              <div className="flex items-center gap-1">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-3.5 w-3.5 text-gray-800"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12l2 2 4-4m-6 8a9 9 0 100-18 9 9 0 000 18z"
-                  />
-                </svg>
-                <span>Delivery guarantee</span>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-3.5 w-3.5 text-gray-800"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M19 7l-7 7-7-7"
-                  />
-                </svg>
-                <span>Free returns</span>
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT SIDE: Illustration */}
-          <div className="flex justify-end flex-shrink-0 ml-3 sm:ml-6">
-          <Image
-            src={`${process.env.NEXT_PUBLIC_BASE_PATH || ""}/promo-right.png`}
-            alt="Promo Illustration"
-            width={110}
-            height={80}
-            className="object-contain w-[90px] sm:w-[110px]"
-          />
-          </div>
-        </div>
-      </section>
+      {/* ✅ Replaced Banner Section with Carousel */}
+      <div className="mt-2 sm:mt-4">
+        <BannerCarousel />
+      </div>
 
       {/* 🔹 Subcategory Section */}
       {selectedCategory && (
@@ -251,6 +166,6 @@ export default function HomePage() {
           )}
         </section>
       )}
-    </div>
+    </main>
   );
 }
