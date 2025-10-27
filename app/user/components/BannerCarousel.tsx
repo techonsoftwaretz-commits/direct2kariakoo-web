@@ -5,6 +5,9 @@ import Image from "next/image";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import axios from "axios";
 
+/* -------------------------------------------------------------------------- */
+/* Interfaces                                                                 */
+/* -------------------------------------------------------------------------- */
 interface Banner {
   id: number;
   image: string;
@@ -12,31 +15,66 @@ interface Banner {
   link?: string;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Cache Constants                                                            */
+/* -------------------------------------------------------------------------- */
+const BANNER_CACHE_KEY = "d2k_cached_banners";
+const BANNER_CACHE_TIME = "d2k_banner_cache_time";
+const CACHE_TTL = 1000 * 60 * 60 * 12; // 12 hours
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 export default function BannerCarousel() {
-  const [banners, setBanners] = useState<Banner[]>([]);
+  const [banners, setBanners] = useState<Banner[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(BANNER_CACHE_KEY);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {}
+      }
+    }
+    return [];
+  });
+
   const [current, setCurrent] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-  // ✅ Fetch banners
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Mark client ready (prevent SSR hydration error)                         */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Fetch banners with cache                                                */
+  /* -------------------------------------------------------------------------- */
+  useEffect(() => {
+    const now = Date.now();
+    const cachedTime = localStorage.getItem(BANNER_CACHE_TIME);
+
+    if (cachedTime && now - parseInt(cachedTime) < CACHE_TTL) return;
+
     axios
       .get(`${process.env.NEXT_PUBLIC_API_URL}/banners`)
       .then((res) => {
-        if (Array.isArray(res.data)) setBanners(res.data);
+        const data = Array.isArray(res.data) ? res.data : [];
+        if (data.length > 0) {
+          setBanners(data);
+          localStorage.setItem(BANNER_CACHE_KEY, JSON.stringify(data));
+          localStorage.setItem(BANNER_CACHE_TIME, now.toString());
+        }
       })
-      .catch((err) => console.error("❌ Failed to load banners:", err));
+      .catch((err) => console.error("⚠️ Failed to refresh banners:", err));
   }, []);
 
-  // ✅ Detect mobile
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  // ✅ Auto-slide
+  /* -------------------------------------------------------------------------- */
+  /* 🎞️ Auto-slide logic                                                      */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     if (isPaused || banners.length === 0) return;
     const interval = setInterval(() => {
@@ -45,20 +83,25 @@ export default function BannerCarousel() {
     return () => clearInterval(interval);
   }, [isPaused, banners]);
 
-  if (banners.length === 0) return null;
+  if (!isClient || banners.length === 0) return null;
 
   /* -------------------------------------------------------------------------- */
-  /* 💻 + 📱 SAME CLEAN CAROUSEL (no scrollbars, no swipe)                      */
+  /* 🎨 Layout (no rounded corners, full width)                                 */
   /* -------------------------------------------------------------------------- */
   return (
     <div
-      className={`relative w-full ${
-        isMobile ? "h-[160px]" : "h-[280px]"
-      } max-w-[1400px] mx-auto overflow-hidden select-none rounded-xl`}
+      className="
+        relative 
+        w-screen             /* full-edge width */
+        sm:w-full  
+        h-[180px] sm:h-[250px] md:h-[320px]  /* responsive heights */
+        overflow-hidden select-none
+        mx-auto               /* center alignment for larger screens */
+      "
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      {/* ✅ Banners */}
+      {/* 🖼️ Banners */}
       {banners.map((banner, index) => (
         <div
           key={banner.id}
@@ -82,34 +125,30 @@ export default function BannerCarousel() {
         </div>
       ))}
 
-      {/* ✅ Arrows (desktop only) */}
-      {!isMobile && (
-        <>
-          <button
-            onClick={() =>
-              setCurrent((prev) => (prev === 0 ? banners.length - 1 : prev - 1))
-            }
-            className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-20 
-            bg-white/90 hover:bg-white text-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md transition-all active:scale-90"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
+      {/* 🧭 Arrows (desktop only) */}
+      <div className="hidden md:flex absolute inset-0 justify-between items-center px-4 z-20">
+        <button
+          onClick={() =>
+            setCurrent((prev) => (prev === 0 ? banners.length - 1 : prev - 1))
+          }
+          className="bg-white/90 hover:bg-white text-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md transition-all active:scale-90"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
 
-          <button
-            onClick={() =>
-              setCurrent((prev) =>
-                prev === banners.length - 1 ? 0 : prev + 1
-              )
-            }
-            className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-20 
-            bg-white/90 hover:bg-white text-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md transition-all active:scale-90"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </>
-      )}
+        <button
+          onClick={() =>
+            setCurrent((prev) =>
+              prev === banners.length - 1 ? 0 : prev + 1
+            )
+          }
+          className="bg-white/90 hover:bg-white text-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md transition-all active:scale-90"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
 
-      {/* ✅ Dots */}
+      {/* 🟡 Dots */}
       <div className="absolute bottom-3 left-0 right-0 z-30 flex justify-center gap-2">
         {banners.map((_, i) => (
           <div

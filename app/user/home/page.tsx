@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import Image from "next/image";
-import SubcategorySection from "@/app/user/components/SubcategorySection";
-import ProductCard from "@/app/user/components/ProductCard";
+import { useRouter } from "next/navigation";
 import Header from "../components/Header";
-import BannerCarousel from "@/app/user/components/BannerCarousel"; // ✅ Added
+import BannerCarousel from "@/app/user/components/BannerCarousel";
+import ProductCard from "@/app/user/components/ProductCard";
+import SubcategorySection from "@/app/user/components/SubcategorySection";
 
+/* -------------------------------------------------------------------------- */
+/* Interfaces                                                                 */
+/* -------------------------------------------------------------------------- */
 interface Product {
   id: number;
   name: string;
@@ -18,84 +21,84 @@ interface Product {
   images: string[];
   attribute_values?: { value: string }[];
 }
-
 interface Category {
   id: number;
   name: string;
 }
+interface Subcategory {
+  id: number;
+  name: string;
+}
 
+/* -------------------------------------------------------------------------- */
+/* Cache Constants                                                            */
+/* -------------------------------------------------------------------------- */
+const CAT_CACHE_KEY = "d2k_home_categories";
+const CAT_CACHE_TIME = "d2k_home_cache_time";
+const CACHE_TTL = 1000 * 60 * 60 * 12; // 12 hours
+
+/* -------------------------------------------------------------------------- */
+/* Component                                                                  */
+/* -------------------------------------------------------------------------- */
 export default function HomePage() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const router = useRouter();
+
+  // ✅ Initialize instantly with cached data
+  const [categories, setCategories] = useState<Category[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CAT_CACHE_KEY);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {}
+      }
+    }
+    return [];
+  });
+
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [selectedSubcategory, setSelectedSubcategory] = useState<number | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [productLoading, setProductLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // 🧠 Fetch categories
+  /* -------------------------------------------------------------------------- */
+  /* 🔹 Load / Refresh Categories in Background                                 */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/categories`);
-        const data = Array.isArray(res.data) ? res.data : [];
-        setCategories(data);
-        if (data.length > 0) setSelectedCategory(data[0]);
-      } catch (err) {
-        console.error("❌ Error loading categories", err);
-        setError("Failed to load categories.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCategories();
-  }, []);
+    const now = Date.now();
+    const cachedTime = localStorage.getItem(CAT_CACHE_TIME);
 
-  // 🧠 Restore selected category from localStorage
-  useEffect(() => {
-    const storedCat = localStorage.getItem("selectedCategory");
-    if (storedCat) {
-      const cat = JSON.parse(storedCat);
-      setSelectedCategory(cat);
-      localStorage.removeItem("selectedCategory");
+    // show cached instantly
+    if (categories.length > 0 && !selectedCategory) {
+      setSelectedCategory(categories[0]);
     }
-  }, []);
 
-  // 🧠 Fetch products by subcategory
-  useEffect(() => {
-    if (!selectedSubcategory || selectedSubcategory === 0) {
-      setProducts([]);
-      return;
-    }
-    setProductLoading(true);
+    // skip if still fresh
+    if (cachedTime && now - parseInt(cachedTime) < CACHE_TTL) return;
+
     axios
-      .get(`${process.env.NEXT_PUBLIC_API_URL}/subcategories/${selectedSubcategory}/products`)
+      .get(`${process.env.NEXT_PUBLIC_API_URL}/categories`)
       .then((res) => {
-        const data = Array.isArray(res.data.products) ? res.data.products : [];
-        setProducts(data);
+        const data = Array.isArray(res.data) ? res.data : [];
+        if (data.length > 0) {
+          setCategories(data);
+          if (!selectedCategory) setSelectedCategory(data[0]);
+          localStorage.setItem(CAT_CACHE_KEY, JSON.stringify(data));
+          localStorage.setItem(CAT_CACHE_TIME, now.toString());
+        }
       })
-      .catch(() => setProducts([]))
-      .finally(() => setProductLoading(false));
-  }, [selectedSubcategory]);
+      .catch((err) => {
+        console.error("⚠️ Category refresh failed", err);
+        setError("Failed to refresh categories.");
+      });
+  }, []);
 
-  // 🧠 Loading/Error Handling
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-screen bg-gray-50">
-        <p className="text-gray-600">Loading categories...</p>
-      </div>
-    );
-
-  if (error)
-    return (
-      <div className="flex justify-center items-center h-screen bg-gray-50">
-        <p className="text-red-600">{error}</p>
-      </div>
-    );
-
+  /* -------------------------------------------------------------------------- */
+  /* 🧱 Layout                                                                  */
+  /* -------------------------------------------------------------------------- */
   return (
     <main className="bg-gray-50 min-h-screen pb-20">
-      {/* ✅ Top Header */}
+      {/* ✅ Header */}
       <Header
         onCategorySelect={(cat) => {
           if (!cat || selectedCategory?.id === cat.id) return;
@@ -107,12 +110,12 @@ export default function HomePage() {
         }}
       />
 
-      {/* ✅ Replaced Banner Section with Carousel */}
+      {/* ✅ Banner */}
       <div className="mt-2 sm:mt-4">
         <BannerCarousel />
       </div>
 
-      {/* 🔹 Subcategory Section */}
+      {/* ✅ Subcategory Section */}
       {selectedCategory && (
         <SubcategorySection
           key={selectedCategory.id}
@@ -121,51 +124,123 @@ export default function HomePage() {
         />
       )}
 
-      {/* 🔹 Product Section */}
-      {selectedSubcategory && selectedSubcategory !== 0 && (
-        <section className="mt-5 px-4">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {products.length > 0 ? "Today's Deals" : "No Products Found"}
-            </h2>
-          </div>
-
-          {productLoading ? (
-            <div className="text-center text-gray-500 py-6">
-              Loading products...
-            </div>
-          ) : products.length === 0 ? (
-            <div className="text-center text-gray-400 py-6">
-              No products found.
-            </div>
-          ) : (
-            <div
-              className="
-                grid 
-                grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 
-                gap-3 sm:gap-4 
-                pb-6
-              "
-            >
-              {products.map((p) => (
-                <ProductCard
-                  key={p.id}
-                  product={{
-                    id: p.id,
-                    name: p.name,
-                    image: p.images?.[0] || "/placeholder.png",
-                    price: p.new_price,
-                    oldPrice: p.old_price,
-                    rating: p.average_rating,
-                    reviews: p.review_count,
-                    attributes: p.attribute_values?.map((a) => a.value),
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+      {/* ✅ Products by Subcategory */}
+      {selectedCategory && (
+        <ProductsBySubcategoryRows
+          categoryId={selectedCategory.id}
+          selectedSubcategory={selectedSubcategory}
+        />
       )}
     </main>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* 🧩 Products by Subcategory Rows Component                                   */
+/* -------------------------------------------------------------------------- */
+function ProductsBySubcategoryRows({
+  categoryId,
+  selectedSubcategory,
+}: {
+  categoryId: number;
+  selectedSubcategory: number | null;
+}) {
+  const router = useRouter();
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [productsBySub, setProductsBySub] = useState<Record<number, Product[]>>({});
+
+  // 🔹 Load subcategories and products (instant + background)
+  useEffect(() => {
+    const cachedKey = `d2k_subs_${categoryId}`;
+    const cached = localStorage.getItem(cachedKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.subcategories && parsed.productsBySub) {
+          setSubcategories(parsed.subcategories);
+          setProductsBySub(parsed.productsBySub);
+        }
+      } catch {}
+    }
+
+    const fetchData = async () => {
+      try {
+        const res = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/categories/${categoryId}/subcategories`
+        );
+        const subs = Array.isArray(res.data) ? res.data : [];
+        setSubcategories(subs);
+
+        const map: Record<number, Product[]> = {};
+        await Promise.all(
+          subs.map(async (sub) => {
+            try {
+              const r = await axios.get(
+                `${process.env.NEXT_PUBLIC_API_URL}/subcategories/${sub.id}/products`
+              );
+              const list = Array.isArray(r.data.products) ? r.data.products : [];
+              map[sub.id] = list;
+            } catch {
+              map[sub.id] = [];
+            }
+          })
+        );
+
+        setProductsBySub(map);
+        localStorage.setItem(cachedKey, JSON.stringify({ subcategories: subs, productsBySub: map }));
+      } catch (err) {
+        console.error("⚠️ Subcategory fetch failed", err);
+      }
+    };
+
+    fetchData();
+  }, [categoryId]);
+
+  const orderedSubs = [
+    ...subcategories.filter((s) => s.id === selectedSubcategory),
+    ...subcategories.filter((s) => s.id !== selectedSubcategory),
+  ];
+
+  return (
+    <section className="mt-5 px-4 space-y-8">
+      {orderedSubs.map((sub) => (
+        <div key={sub.id} className="space-y-3">
+          {/* Subcategory Header */}
+          <div className="flex justify-between items-center">
+            <h2 className="text-base font-semibold text-gray-900">{sub.name}</h2>
+            <button
+              onClick={() => router.push(`/user/subcategories?id=${sub.id}`)}
+              className="text-teal-600 text-xs hover:underline"
+            >
+              See all →
+            </button>
+          </div>
+
+          {/* Product Row */}
+          <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
+            {(productsBySub[sub.id] || []).length === 0 ? (
+              <div className="text-gray-400 text-xs px-4 py-6">No products found</div>
+            ) : (
+              (productsBySub[sub.id] || []).map((p) => (
+                <div key={p.id} className="flex-shrink-0 w-[180px] sm:w-[200px]">
+                  <ProductCard
+                    product={{
+                      id: p.id,
+                      name: p.name,
+                      image: p.images?.[0] || "/placeholder.png",
+                      price: p.new_price,
+                      oldPrice: p.old_price,
+                      rating: p.average_rating,
+                      reviews: p.review_count,
+                      attributes: p.attribute_values?.map((a) => a.value),
+                    }}
+                  />
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }

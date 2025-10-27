@@ -95,41 +95,42 @@ export default function CategoryScreen() {
       .finally(() => setSubLoading(false));
   }, [selectedCategory]);
 
-  /* ---------------------------- Loading State ---------------------------- */
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-[80vh] text-gray-500 text-sm">
-        Loading categories...
-      </div>
-    );
-
   /* ------------------------------ Page Layout ----------------------------- */
   return (
     <div className="bg-white min-h-screen">
       {/* ✅ Global Header */}
       <Header onCategorySelect={() => {}} onSubcategorySelect={() => {}} />
 
-      {/* ✅ Two-column layout */}
+      {/* ✅ Two-column layout (always visible) */}
       <div className="flex h-[calc(100vh-120px)] overflow-hidden">
         {/* LEFT SIDEBAR: Categories */}
         <aside className="w-[35%] bg-gray-50 border-r border-gray-100 overflow-y-auto">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat)}
-              className={`
-                w-full text-left px-4 py-3 text-[13px] font-medium
-                transition-all duration-200 border-b border-gray-100
-                ${
-                  selectedCategory?.id === cat.id
-                    ? "bg-white text-teal-600 border-l-4 border-teal-600 font-semibold"
-                    : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                }
-              `}
-            >
-              {cat.name}
-            </button>
-          ))}
+          {loading
+            ? Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-full px-4 py-3 border-b border-gray-100 animate-pulse"
+                >
+                  <div className="h-3 w-3/4 bg-gray-200 rounded"></div>
+                </div>
+              ))
+            : categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`
+                    w-full text-left px-4 py-3 text-[13px] font-medium
+                    transition-all duration-200 border-b border-gray-100
+                    ${
+                      selectedCategory?.id === cat.id
+                        ? "bg-white text-teal-600 border-l-4 border-teal-600 font-semibold"
+                        : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+                    }
+                  `}
+                >
+                  {cat.name}
+                </button>
+              ))}
         </aside>
 
         {/* RIGHT CONTENT: Subcategories */}
@@ -138,10 +139,13 @@ export default function CategoryScreen() {
             {selectedCategory?.name || "Recommended"}
           </h2>
 
-          {subLoading ? (
+          {subLoading || loading ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 animate-pulse">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="w-[60px] h-[75px] bg-gray-100 rounded-md" />
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-[60px] h-[75px] bg-gray-100 rounded-md mx-auto"
+                />
               ))}
             </div>
           ) : subcategories.length === 0 ? (
@@ -159,10 +163,7 @@ export default function CategoryScreen() {
               {subcategories.map((sub) => (
                 <div
                   key={sub.id}
-                  onClick={() => {
-                    const url = `/user/subcategories?id=${sub.id}`;
-                    router.push(url);
-                  }}
+                  onClick={() => router.push(`/user/subcategories?id=${sub.id}`)}
                   className="
                     flex flex-col items-center text-center cursor-pointer
                     hover:scale-[1.04] transition-transform duration-200
