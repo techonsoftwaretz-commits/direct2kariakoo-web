@@ -21,7 +21,19 @@ export default function CategoryNav({
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
 
-  // ✅ Keep selected visible
+  /* -------------------------------------------------------------------------- */
+  /* 🔹 Default select first category on mount                                  */
+  /* -------------------------------------------------------------------------- */
+  useEffect(() => {
+    if (categories.length > 0 && selectedCategory === null) {
+      setSelectedCategory(categories[0].id);
+      onHover(categories[0]);
+    }
+  }, [categories, selectedCategory, onHover]);
+
+  /* -------------------------------------------------------------------------- */
+  /* 🔹 Keep the selected category always visible                               */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     if (selectedCategory !== null) {
       const el = document.getElementById(`cat-${selectedCategory}`);
@@ -29,7 +41,9 @@ export default function CategoryNav({
     }
   }, [selectedCategory]);
 
-  // ✅ Scroll visibility
+  /* -------------------------------------------------------------------------- */
+  /* 🔹 Check scroll visibility                                                 */
+  /* -------------------------------------------------------------------------- */
   const checkScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -37,7 +51,9 @@ export default function CategoryNav({
     setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 5);
   };
 
-  // ✅ Scroll handler
+  /* -------------------------------------------------------------------------- */
+  /* 🔹 Scroll handler                                                          */
+  /* -------------------------------------------------------------------------- */
   const scroll = (dir: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
@@ -48,6 +64,9 @@ export default function CategoryNav({
     });
   };
 
+  /* -------------------------------------------------------------------------- */
+  /* 🔹 Add scroll listeners                                                    */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     checkScroll();
     const el = scrollRef.current;
@@ -60,6 +79,9 @@ export default function CategoryNav({
     };
   }, []);
 
+  /* -------------------------------------------------------------------------- */
+  /* 🔹 Component UI                                                            */
+  /* -------------------------------------------------------------------------- */
   return (
     <div
       className="relative bg-white border-t border-gray-200 shadow-sm select-none"
@@ -75,10 +97,10 @@ export default function CategoryNav({
         </button>
       )}
 
-      {/* ✅ Categories — scrollbar completely hidden */}
+      {/* Categories */}
       <div
         ref={scrollRef}
-        className="flex overflow-x-auto no-scrollbar gap-6 text-gray-800 font-semibold text-sm py-2 px-10 scroll-smooth"
+        className="flex overflow-x-auto scrollbar-hide gap-6 text-gray-800 font-semibold text-sm py-2 px-10 scroll-smooth"
       >
         {categories.map((cat) => {
           const isActive =
@@ -87,7 +109,10 @@ export default function CategoryNav({
             <button
               key={cat.id}
               id={`cat-${cat.id}`}
-              onClick={() => setSelectedCategory(cat.id)}
+              onClick={() => {
+                setSelectedCategory(cat.id);
+                onHover(cat);
+              }}
               onMouseEnter={() => onHover(cat)}
               className={`relative flex-shrink-0 px-1 pb-1 transition ${
                 isActive
