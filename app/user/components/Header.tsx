@@ -14,6 +14,7 @@ import {
 import SearchBar from "./SearchBar";
 import CategoryNav from "./CategoryNav";
 import axios from "axios";
+import { listenEvent } from "@/lib/eventBus";
 
 interface Category {
   id: number;
@@ -98,7 +99,7 @@ export default function Header({
     );
   }, []);
 
-  /* -------------------------- 🗂️ Fetch Categories (with cache) ------------------------- */
+  /* -------------------------- 🗂️ Fetch Categories -------------------------- */
   useEffect(() => {
     let cancelled = false;
 
@@ -117,8 +118,10 @@ export default function Header({
           }
         }
 
-        // ✅ Background refresh (won’t block UI)
-        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/categories-with-subcategories`);
+        // ✅ Background refresh
+        const res = await axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/categories-with-subcategories`
+        );
         const cats = Array.isArray(res.data) ? res.data : [];
 
         if (!cancelled) {
@@ -145,63 +148,66 @@ export default function Header({
       const token = localStorage.getItem("token");
       const userId = localStorage.getItem("userId");
       if (!token || !userId) return;
-
+  
       const headers = { Authorization: `Bearer ${token}` };
-
+  
+      // ✅ Fetch all counts
       const [msgRes, orderRes, cartRes] = await Promise.allSettled([
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/messages/count-unread-messages/${userId}`, { headers }),
+        axios.get(
+          `${process.env.NEXT_PUBLIC_API_URL}/messages/count-unread-messages/${userId}`,
+          { headers }
+        ),
         axios.get(`${process.env.NEXT_PUBLIC_API_URL}/orders/count`, { headers }),
         axios.get(`${process.env.NEXT_PUBLIC_API_URL}/cart`, { headers }),
       ]);
-
-      if (msgRes.status === "fulfilled") setUnreadCount(msgRes.value.data.count || 0);
-      if (orderRes.status === "fulfilled") setOrderCount(orderRes.value.data.count || 0);
+  
+      // ✅ Update message count
+      if (msgRes.status === "fulfilled") {
+        setUnreadCount(msgRes.value.data.count || 0);
+      }
+  
+      // ✅ Update order count (store locally too)
+      if (orderRes.status === "fulfilled") {
+        const count = orderRes.value.data.count || 0;
+        setOrderCount(count);
+        localStorage.setItem("orders_count", String(count));
+      }
+  
+      // ✅ Update cart count
       if (cartRes.status === "fulfilled") {
-        const items = cartRes.value.data.items || [];
+        const items =
+          cartRes.value.data.items || cartRes.value.data.cart?.items || [];
         setCartCount(items.length || 0);
+        localStorage.setItem("cart_items", JSON.stringify(items));
       }
     } catch (err) {
       console.error("Failed to update counts:", err);
     }
   };
-
+  
   useEffect(() => {
+    // ✅ Load cached values instantly for snappy UI
+    const cachedCart = localStorage.getItem("cart_items");
+    if (cachedCart) setCartCount(JSON.parse(cachedCart).length || 0);
+  
+    const cachedOrders = localStorage.getItem("orders_count");
+    if (cachedOrders) setOrderCount(Number(cachedOrders));
+  
+    // ✅ Always refresh latest
     updateCounts();
-
-    const handleCartUpdate = () => {
-      const cached = localStorage.getItem("cart_items");
-      if (cached) {
-        const items = JSON.parse(cached);
-        setCartCount(items.length);
-      }
-    };
-
-    const handleMessageUpdate = () => {
-      const unread = parseInt(localStorage.getItem("d2k_unread_count") || "0");
-      setUnreadCount(unread);
-    };
-
-    const handleOrderUpdate = () => {
-      const cached = localStorage.getItem("d2k_orders_cache");
-      if (cached) {
-        const orders = JSON.parse(cached);
-        setOrderCount(orders.length);
-      }
-    };
-
-    window.addEventListener("cart-updated", handleCartUpdate);
-    window.addEventListener("messages-updated", handleMessageUpdate);
-    window.addEventListener("orders-updated", handleOrderUpdate);
-
+  
+    // ✅ Use global event bus listeners
+    const offCart = listenEvent("cart-updated", updateCounts);
+    const offOrders = listenEvent("orders-updated", updateCounts);
+  
     const interval = setInterval(updateCounts, 20000);
-
+  
     return () => {
-      window.removeEventListener("cart-updated", handleCartUpdate);
-      window.removeEventListener("messages-updated", handleMessageUpdate);
-      window.removeEventListener("orders-updated", handleOrderUpdate);
+      offCart();
+      offOrders();
       clearInterval(interval);
     };
-  }, []);
+  }, []);  
 
   /* ----------------------------- 🧠 Render --------------------------------- */
   return (
@@ -272,10 +278,14 @@ export default function Header({
             )}
           </button>
 
-          {/* Cart */}
+          {/* 🛒 Cart */}
           <button
-            onClick={() => router.push("/user/cart")}
-            className="relative text-gray-700 hover:text-gray-900"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              window.location.href = "/user/cart";
+            }}
+            className="relative text-gray-700 hover:text-gray-900 focus:outline-none"
           >
             <ShoppingCart size={22} />
             {cartCount > 0 && (

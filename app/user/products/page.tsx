@@ -1,38 +1,52 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import useSWR from "swr";
 import axios from "axios";
 import ProductDetails from "@/app/user/components/ProductDetails";
 import { useSearchParams } from "next/navigation";
 
 /* -------------------------------------------------------------------------- */
-/*                        AXIOS FETCHER WITH TIMEOUT                          */
+/* 🧠 AXIOS FETCHER (Simple + Reliable)                                       */
 /* -------------------------------------------------------------------------- */
 const fetcher = async (url: string) => {
-  const source = axios.CancelToken.source();
-  const timeout = setTimeout(() => {
-    source.cancel("Request timeout");
-  }, 6000);
-
-  try {
-    const res = await axios.get(url, { cancelToken: source.token });
-    clearTimeout(timeout);
-    return res.data.product || res.data;
-  } catch (err: any) {
-    if (axios.isCancel(err)) throw new Error("Request timeout");
-    throw new Error("Failed to load product");
-  }
+  const res = await axios.get(url);
+  return res.data.product || res.data;
 };
 
 /* -------------------------------------------------------------------------- */
-/*                          PRODUCT DETAILS INNER UI                          */
+/* 💫 SKELETON / SHIMMER LOADER                                              */
+/* -------------------------------------------------------------------------- */
+function ProductSkeleton() {
+  return (
+    <div className="animate-pulse bg-gray-50 min-h-screen px-6 py-10">
+      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Left: image placeholder */}
+        <div className="bg-gray-200 h-96 w-full rounded-lg" />
+        {/* Right: content placeholders */}
+        <div className="flex flex-col gap-4">
+          <div className="h-6 w-3/4 bg-gray-200 rounded" />
+          <div className="h-4 w-1/2 bg-gray-200 rounded" />
+          <div className="h-5 w-2/3 bg-gray-200 rounded" />
+          <div className="h-5 w-1/3 bg-gray-200 rounded" />
+          <div className="h-40 w-full bg-gray-100 rounded-lg mt-6" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* ⚙️ PRODUCT DETAILS INNER COMPONENT                                         */
 /* -------------------------------------------------------------------------- */
 function ProductDetailsInner() {
   const searchParams = useSearchParams();
   const productId = searchParams.get("id");
+  const [cachedProduct, setCachedProduct] = useState<any>(null);
 
-  // ✅ Use SWR for caching + retry logic
+  /* -------------------------------------------------------------------------- */
+  /* ✅ Use SWR with background refresh + cache                                 */
+  /* -------------------------------------------------------------------------- */
   const {
     data: product,
     error,
@@ -44,62 +58,66 @@ function ProductDetailsInner() {
       : null,
     fetcher,
     {
-      revalidateOnFocus: false,
-      shouldRetryOnError: true,
-      dedupingInterval: 60000, // keep cache for 1 minute
+      revalidateOnFocus: true, // Refresh when user switches back to tab
+      refreshInterval: 15000, // Background refresh every 15s
+      dedupingInterval: 60000, // Keep cache fresh for 1 min
     }
   );
 
   /* -------------------------------------------------------------------------- */
-  /*                   ✅ LocalStorage Instant Load (Fast UI)                   */
+  /* ⚡️ Load cached product instantly before fetch                             */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     if (!productId) return;
 
     const cacheKey = `d2k_product_${productId}`;
-    // 1️⃣ Try to load cached data first for instant display
+
+    // Load from cache for instant UI
     const cached = localStorage.getItem(cacheKey);
     if (cached && !product) {
       try {
         const parsed = JSON.parse(cached);
-        mutate(parsed, false); // show cached data instantly (without re-fetch)
-      } catch (e) {
-        console.warn("⚠️ Failed to parse cached product:", e);
+        setCachedProduct(parsed);
+        mutate(parsed, false); // Show cached version instantly
+      } catch {
+        console.warn("⚠️ Failed to parse cached product data");
       }
     }
 
-    // 2️⃣ Once SWR gets fresh data, update cache
+    // Save to cache whenever SWR fetches fresh data
     if (product) {
       localStorage.setItem(cacheKey, JSON.stringify(product));
+      setCachedProduct(product);
     }
   }, [product, productId, mutate]);
 
-  /* ----------------------------- Loading State ----------------------------- */
-  if (isLoading && !product)
-    return (
-      <div className="flex justify-center items-center h-screen text-gray-500">
-        Loading product...
-      </div>
-    );
-
-  /* ----------------------------- Error Handling ---------------------------- */
-  if (error || !product)
+  /* -------------------------------------------------------------------------- */
+  /* 🚨 Error State                                                            */
+  /* -------------------------------------------------------------------------- */
+  if (error)
     return (
       <div className="flex justify-center items-center h-screen text-red-600">
-        {error?.message || "Product not found."}
+        {error.message || "Failed to load product."}
       </div>
     );
 
-  /* ---------------------------- Render Product ----------------------------- */
-  return <ProductDetails product={product} />;
+  /* -------------------------------------------------------------------------- */
+  /* 💫 Loading State (use skeleton)                                           */
+  /* -------------------------------------------------------------------------- */
+  if (isLoading && !cachedProduct) return <ProductSkeleton />;
+
+  /* -------------------------------------------------------------------------- */
+  /* ✅ Render Product Details                                                 */
+  /* -------------------------------------------------------------------------- */
+  return <ProductDetails product={product || cachedProduct} />;
 }
 
 /* -------------------------------------------------------------------------- */
-/*                           PAGE WRAPPED IN SUSPENSE                         */
+/* 🚀 PAGE WRAPPER (with Suspense Boundary)                                   */
 /* -------------------------------------------------------------------------- */
 export default function ProductDetailsPage() {
   return (
-    <Suspense fallback={<div className="text-center p-10">Loading...</div>}>
+    <Suspense fallback={<ProductSkeleton />}>
       <ProductDetailsInner />
     </Suspense>
   );

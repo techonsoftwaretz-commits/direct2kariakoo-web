@@ -5,9 +5,7 @@ import ProductCard from "./ProductCard";
 export default function ProductGrid({ products }: { products: any[] }) {
   if (!products?.length)
     return (
-      <div className="text-center text-gray-400 py-10">
-        No products found.
-      </div>
+      <div className="text-center text-gray-400 py-10">No products found.</div>
     );
 
   // ✅ Normalize product data for ProductCard
@@ -29,8 +27,9 @@ export default function ProductGrid({ products }: { products: any[] }) {
     <div
       className="
         grid
-        grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-9
-        gap-3 sm:gap-4 pb-6
+        grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6
+        gap-4 sm:gap-5 md:gap-6
+        py-6
       "
     >
       {normalized.map((p) => (

@@ -101,58 +101,61 @@ export default function CheckoutPage() {
   const handlePayment = async (isLipaConfirm = false) => {
     const token = localStorage.getItem("token");
     if (!token) return router.push("/user/login");
-
+  
     try {
       setLoading(true);
-
-      // ✅ Get items from state OR localStorage (backup)
+  
+      // ✅ Get items to pay for
       let itemsPayload = cartItems.map((item) => ({
         product_id: item.product_id || item.product?.id,
         quantity: item.quantity,
-      }));      
-
+      }));
+  
       if (!itemsPayload.length) {
         const savedCart = localStorage.getItem("cart_items");
         if (savedCart) {
-          try {
-            const parsed = JSON.parse(savedCart);
-            itemsPayload = parsed.map((it: any) => ({
-              product_id: it.product_id || it.product?.id,
-              quantity: it.quantity,
-            }));
-          } catch (e) {
-            console.error("Failed to parse cart_items from localStorage");
-          }
+          const parsed = JSON.parse(savedCart);
+          itemsPayload = parsed.map((it: any) => ({
+            product_id: it.product_id || it.product?.id,
+            quantity: it.quantity,
+          }));
         }
       }
-
+  
       if (!itemsPayload.length) {
         alert("Cart is empty — please add items first.");
         return;
       }
-
+  
+      // ✅ Payment methods
       if (tab === "mobile") {
         if (!phone.trim()) return alert("Please enter your mobile number");
-
+  
         await axios.post(
           `${apiBaseUrl}/checkout`,
           { phone, provider: selectedNetwork, items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-
-        // ✅ Clear local cart after successful payment
+  
+        // ✅ Clear backend cart
+        await axios.delete(`${apiBaseUrl}/cart/clear`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {});
+  
+        // ✅ Clear local storage cart
         localStorage.removeItem("cart_items");
         localStorage.removeItem("checkout_total");
         window.dispatchEvent(new Event("cart-updated"));
-
+        window.dispatchEvent(new Event("orders-updated"));
+  
         alert("Payment initiated! Confirm on your mobile device.");
         router.push("/user/orders");
-
-      } 
+      }
+  
       else if (tab === "card") {
         if (!cardNumber || !expiry || !cvv || !name)
           return alert("Please fill in all card details");
-
+  
         await axios.post(
           `${apiBaseUrl}/checkout/card`,
           {
@@ -165,32 +168,48 @@ export default function CheckoutPage() {
           },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-
+  
+        // ✅ Clear backend + local cart
+        await axios.delete(`${apiBaseUrl}/cart/clear`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {});
+        localStorage.removeItem("cart_items");
+        localStorage.removeItem("checkout_total");
+        window.dispatchEvent(new Event("cart-updated"));
+        window.dispatchEvent(new Event("orders-updated"));
+  
         alert("Card payment successful!");
         router.push("/user/orders");
-      } 
+      }
+  
       else if (tab === "lipa" && isLipaConfirm) {
-        // ✅ FIXED: Include items payload so backend accepts the request
         await axios.post(
           `${apiBaseUrl}/checkout/confirm-lipa`,
           { total, reference: "LipaNambaManualConfirm", items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-
+  
+        await axios.delete(`${apiBaseUrl}/cart/clear`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => {});
+        localStorage.removeItem("cart_items");
+        localStorage.removeItem("checkout_total");
+        window.dispatchEvent(new Event("cart-updated"));
+        window.dispatchEvent(new Event("orders-updated"));
+  
         alert("Payment confirmed! Your order has been placed successfully.");
         router.push("/user/orders");
       }
     } catch (err: any) {
       console.error("❌ Payment Error:", err.response?.data || err.message);
       alert(
-        err.response?.data?.message ||
-          "Payment failed. Please try again."
+        err.response?.data?.message || "Payment failed. Please try again."
       );
     } finally {
       setLoading(false);
     }
   };
-
+  
   /* ✅ Handle Back Arrow */
   const handleBack = () => {
     if (window.history.length > 1) router.back();
@@ -201,13 +220,7 @@ export default function CheckoutPage() {
     <div className="bg-gray-50 min-h-screen">
       {/* ✅ Desktop Header */}
       {isDesktop && (
-        <Header
-          onCategorySelect={(cat) => {
-            localStorage.setItem("selectedCategory", JSON.stringify(cat));
-            router.push("/user");
-          }}
-          onSubcategorySelect={() => {}}
-        />
+        <Header onCategorySelect={() => {}} onSubcategorySelect={() => {}} />
       )}
 
       {/* ✅ Mobile Top Bar with Back Arrow */}

@@ -113,7 +113,6 @@ export default function CategoryNav({
                 setSelectedCategory(cat.id);
                 onHover(cat);
               }}
-              onMouseEnter={() => onHover(cat)}
               className={`relative flex-shrink-0 px-1 pb-1 transition ${
                 isActive
                   ? "text-black border-b-2 border-black"

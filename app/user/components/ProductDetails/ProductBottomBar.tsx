@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import { updateCartCache } from "@/lib/cartUtils";
 
 export default function ProductBottomBar({
   price,
@@ -14,6 +15,9 @@ export default function ProductBottomBar({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
+  /* -------------------------------------------------------------------------- */
+  /* 🛒 Add to Cart + Sync Header Badge */
+  /* -------------------------------------------------------------------------- */
   const handleAddToCart = async () => {
     try {
       setLoading(true);
@@ -24,25 +28,28 @@ export default function ProductBottomBar({
         return;
       }
 
-      await axios.post(
+      const res = await axios.post(
         `${process.env.NEXT_PUBLIC_API_URL}/cart/add`,
         { product_id: productId, quantity: 1 },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      // ✅ Update global cart count via custom event
-      window.dispatchEvent(new Event("cart-updated"));
+      // ✅ Extract updated cart items and sync globally
+      const updatedItems = res.data.items || res.data.cart?.items || [];
+      updateCartCache(updatedItems);
 
-      // ✅ Show success message
       alert("🛒 Product added to cart!");
     } catch (err: any) {
       console.error("❌ Add to cart error:", err);
-      alert("Failed to add product to cart.");
+      alert("Failed to add product to cart. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  /* -------------------------------------------------------------------------- */
+  /* ⚡ Buy Now (Single-item checkout) */
+  /* -------------------------------------------------------------------------- */
   const handleBuyNow = async () => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -50,18 +57,18 @@ export default function ProductBottomBar({
       router.push("/user/login");
       return;
     }
-  
-    // ✅ Save this single product to temporary checkout data
+
+    // ✅ Store single product checkout info
     const buyNowItem = [{ product_id: productId, quantity: 1 }];
     localStorage.setItem("checkout_items", JSON.stringify(buyNowItem));
-  
-    // ✅ Optionally store price (useful for instant total display)
     localStorage.setItem("checkout_total", String(price));
-  
-    // ✅ Redirect to checkout
-    router.push("/user/checkout?buyNow=true");
-  };  
 
+    router.push("/user/checkout?buyNow=true");
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* 🖥️ UI */
+  /* -------------------------------------------------------------------------- */
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-3 px-6 flex items-center justify-between shadow-lg z-50">
       {/* Price Section */}

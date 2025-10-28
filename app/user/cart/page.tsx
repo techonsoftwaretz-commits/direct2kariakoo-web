@@ -6,6 +6,12 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Header from "@/app/user/components/Header";
 
+// utils/cartUtils.ts
+export const updateCartCache = (items: any[]) => {
+  localStorage.setItem("cart_items", JSON.stringify(items));
+  window.dispatchEvent(new Event("cart-updated"));
+};
+
 export default function CartPage() {
   const router = useRouter();
   const [cartItems, setCartItems] = useState<any[]>([]);
@@ -30,20 +36,17 @@ export default function CartPage() {
     if (Array.isArray(product.images) && typeof product.images[0] === "string") {
       return normalizeUrl(product.images[0]);
     }
-
     if (Array.isArray(product.images) && product.images[0]?.image) {
       return normalizeUrl(product.images[0].image);
     }
-
     if (typeof product.images === "string") {
       return normalizeUrl(product.images);
     }
-
     return "/placeholder.png";
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 🧩 Fetch cart data (with caching) */
+  /* 🧩 Fetch Cart */
   /* -------------------------------------------------------------------------- */
   const fetchCart = async (force = false) => {
     try {
@@ -51,25 +54,21 @@ export default function CartPage() {
       const token = localStorage.getItem("token");
       if (!token) return router.push("/user/login");
 
-      // ✅ 1. Load cached data instantly (if not forcing refresh)
       if (!force) {
         const cached = localStorage.getItem("cart_items");
         if (cached) {
-          const parsed = JSON.parse(cached);
-          setCartItems(parsed);
+          setCartItems(JSON.parse(cached));
           setLoading(false);
         }
       }
 
-      // ✅ 2. Fetch fresh data in background
       const res = await axios.get(`${apiBaseUrl}/cart`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       const items = res.data.items || res.data.cart?.items || [];
       setCartItems(items);
-      localStorage.setItem("cart_items", JSON.stringify(items));
-      window.dispatchEvent(new Event("cart-updated"));
+      updateCartCache(items);
     } catch (err) {
       console.error("❌ Failed to load cart:", err);
       setError("Failed to load cart items");
@@ -88,7 +87,6 @@ export default function CartPage() {
   const updateCart = async (productId: number, quantity: number) => {
     const token = localStorage.getItem("token");
     if (!token) return;
-
     try {
       const res = await axios.post(
         `${apiBaseUrl}/cart/update`,
@@ -97,8 +95,7 @@ export default function CartPage() {
       );
       const updated = res.data.items || [];
       setCartItems(updated);
-      localStorage.setItem("cart_items", JSON.stringify(updated));
-      window.dispatchEvent(new Event("cart-updated"));
+      updateCartCache(updated);
     } catch (err) {
       console.error("❌ Update failed:", err);
       fetchCart(true);
@@ -141,8 +138,7 @@ export default function CartPage() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const updated = res.data.items || [];
-      localStorage.setItem("cart_items", JSON.stringify(updated));
-      window.dispatchEvent(new Event("cart-updated"));
+      updateCartCache(updated);
     } catch (err) {
       console.error("❌ Failed to remove item:", err);
       fetchCart(true);
@@ -152,10 +148,10 @@ export default function CartPage() {
   /* -------------------------------------------------------------------------- */
   /* 💰 Subtotal & Checkout */
   /* -------------------------------------------------------------------------- */
-  const subtotal = cartItems.reduce(
-    (sum, it) => sum + it.product.new_price * it.quantity,
-    0
-  );
+  const subtotal = cartItems.reduce((sum, it) => {
+    const price = Number(it.product?.new_price ?? it.product?.price ?? 0);
+    return sum + price * it.quantity;
+  }, 0);
 
   const goToCheckout = () => {
     if (cartItems.length === 0) {
@@ -175,8 +171,10 @@ export default function CartPage() {
       <Header
         onCategorySelect={(cat) => {
           if (!cat) return;
-          localStorage.setItem("selectedCategory", JSON.stringify(cat));
-          router.push("/user");
+          if (window.location.pathname === "/user") {
+            localStorage.setItem("selectedCategory", JSON.stringify(cat));
+            router.push("/user");
+          }
         }}
         onSubcategorySelect={(id) => {
           if (!id) return;
@@ -186,7 +184,7 @@ export default function CartPage() {
 
       <div className="max-w-7xl mx-auto px-4 py-6 lg:flex lg:gap-6">
         {/* 🛒 Cart Items */}
-        <div className="flex-1 bg-white rounded-2xl shadow-md p-6 transition-all">
+        <div className="flex-1 bg-white rounded-2xl shadow-md p-6">
           {loading ? (
             <div className="flex justify-center py-24 text-gray-500 text-lg">
               Loading your cart...
@@ -222,15 +220,16 @@ export default function CartPage() {
               <div className="space-y-4">
                 {cartItems.map((item) => {
                   const product = item.product || {};
+                  const price =
+                    Number(product.new_price ?? product.price ?? 0);
+                  const totalForItem = price * item.quantity;
                   const image = getProductImage(product);
-                  const totalForItem = product.new_price * item.quantity;
 
                   return (
                     <div
                       key={product.id}
-                      className="flex flex-row gap-4 items-center sm:items-start bg-gray-50 hover:bg-gray-100 p-4 rounded-xl transition"
+                      className="flex flex-row gap-4 items-center bg-gray-50 hover:bg-gray-100 p-4 rounded-xl transition"
                     >
-                      {/* 🖼️ Product Image */}
                       <div className="w-[80px] h-[80px] sm:w-[100px] sm:h-[100px] rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
                         <Image
                           src={image}
@@ -241,22 +240,21 @@ export default function CartPage() {
                         />
                       </div>
 
-                      {/* 🧾 Product Details */}
                       <div className="flex flex-col flex-1">
                         <h3 className="font-semibold text-gray-900 text-sm sm:text-base line-clamp-1">
-                          {product.name}
+                          {product.name || "Unnamed Product"}
                         </h3>
                         {product.description && (
-                          <p className="text-gray-500 text-xs sm:text-sm mt-1 line-clamp-2">
+                          <p className="text-gray-500 text-xs mt-1 line-clamp-2">
                             {product.description.slice(0, 50)}...
                           </p>
                         )}
 
-                        <div className="mt-2 text-sm sm:text-base">
+                        <div className="mt-2 text-sm">
                           <p className="text-gray-600">
                             Price per item:{" "}
                             <span className="font-semibold text-black">
-                              TZS {product.new_price.toLocaleString()}
+                              TZS {price.toLocaleString()}
                             </span>
                           </p>
                           <p className="font-semibold text-gray-800 mt-1">
@@ -264,7 +262,6 @@ export default function CartPage() {
                           </p>
                         </div>
 
-                        {/* ➕➖ Controls */}
                         <div className="flex items-center justify-between mt-3">
                           <div className="flex items-center gap-2">
                             <button
@@ -290,7 +287,7 @@ export default function CartPage() {
 
                           <button
                             onClick={() => handleRemove(product.id)}
-                            className="text-red-500 hover:text-red-600 text-xs sm:text-sm font-medium"
+                            className="text-red-500 hover:text-red-600 text-xs font-medium"
                           >
                             Remove
                           </button>

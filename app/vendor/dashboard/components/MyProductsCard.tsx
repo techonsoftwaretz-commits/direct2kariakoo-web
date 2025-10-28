@@ -37,16 +37,8 @@ export default function MyProductsCard({
     return `${base}/storage/${img}`;
   };
 
-  // ==================== LOADING STATES ====================
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12 text-gray-500">
-        Loading products...
-      </div>
-    );
-  }
-
-  if (!products || products.length === 0) {
+  // ==================== NO LOADING PLACEHOLDER ====================
+  if (!loading && (!products || products.length === 0)) {
     return (
       <div className="flex justify-center py-12 text-gray-400">
         No products found.
@@ -56,7 +48,7 @@ export default function MyProductsCard({
 
   // ==================== MAIN ====================
   return (
-    <div className="bg-[#F9FAFB] py-5">
+    <div className="bg-[#F9FAFB] py-5 animate-fadeIn">
       {/* HEADER */}
       <div className="flex justify-between items-center px-5 mb-5">
         <h2 className="text-[18px] font-extrabold text-[#272B37] underline">
@@ -90,7 +82,7 @@ export default function MyProductsCard({
           px-5
         "
       >
-        {products.map((product) => {
+        {(products || []).map((product) => {
           const rawImg =
             product?.images?.[0]?.image ||
             product?.product_images?.[0]?.image ||
@@ -116,7 +108,7 @@ export default function MyProductsCard({
           return (
             <Link
               key={product.id}
-              href={`/vendor/products?id=${product.id}`} // ✅ fixed dynamic path
+              href={`/vendor/products?id=${product.id}`}
               className="bg-white rounded-[8px] border border-[#E3E7ED] shadow-sm hover:shadow-md hover:scale-[1.02] transition-all duration-200"
             >
               {/* BADGE */}
@@ -182,8 +174,7 @@ export default function MyProductsCard({
                 <div className="flex items-center mb-2">
                   {Array.from({ length: 5 }).map((_, i) => {
                     const filled = i < Math.floor(Number(rating));
-                    const half =
-                      i < Number(rating) && Number(rating) - i >= 0.5;
+                    const half = i < Number(rating) && Number(rating) - i >= 0.5;
                     return (
                       <Star
                         key={i}
@@ -199,7 +190,7 @@ export default function MyProductsCard({
                     );
                   })}
                   <span className="ml-1 text-[12px] font-bold text-[#232742]">
-                    {rating}
+                    {Number(reviewCount) > 0 ? rating : ""}
                   </span>
                   <span className="ml-1 text-[11.5px] text-gray-500">
                     ({reviewCount})
@@ -247,4 +238,19 @@ export default function MyProductsCard({
       </div>
     </div>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* ✨ Fade Animation                                                          */
+/* -------------------------------------------------------------------------- */
+if (typeof window !== "undefined") {
+  const style = document.createElement("style");
+  style.innerHTML = `
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fadeIn { animation: fadeIn 0.25s ease-in-out; }
+  `;
+  document.head.appendChild(style);
 }
