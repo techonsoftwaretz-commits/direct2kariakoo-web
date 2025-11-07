@@ -56,6 +56,7 @@ export default function OrdersPage() {
       const cached = localStorage.getItem(CACHE_KEY);
       const cachedTime = localStorage.getItem(CACHE_TIME);
 
+      // 🧠 Load from cache instantly if still fresh
       if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY) {
         try {
           const parsed = JSON.parse(cached);
@@ -126,7 +127,7 @@ export default function OrdersPage() {
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 💎 Shimmer skeleton                                                        */
+  /* 💎 Shimmer skeleton loader                                                 */
   /* -------------------------------------------------------------------------- */
   const ShimmerCard = () => (
     <div className="animate-pulse bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -143,7 +144,7 @@ export default function OrdersPage() {
   );
 
   /* -------------------------------------------------------------------------- */
-  /* 🎨 Render order cards                                                      */
+  /* 🎨 Render order list                                                      */
   /* -------------------------------------------------------------------------- */
   const renderOrders = (list: Order[], emptyText: string) => (
     <AnimatePresence mode="wait">
@@ -217,7 +218,11 @@ export default function OrdersPage() {
                 <div className="w-24 h-24 bg-gray-50 flex-shrink-0">
                   {image ? (
                     <img
-                      src={image.startsWith("http") ? image : `${storageUrl}/${image}`}
+                      src={
+                        image.startsWith("http")
+                          ? image
+                          : `${storageUrl}/${image}`
+                      }
                       alt={order.product?.name || "Product"}
                       className="w-full h-full object-cover"
                     />
