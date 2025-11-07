@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   ShoppingCart,
   Package,
@@ -43,6 +43,8 @@ export default function Header({
   onSubcategorySelect,
 }: HeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const [isNavigating, setIsNavigating] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
@@ -144,6 +146,9 @@ export default function Header({
 
   /* --------------------- 🛒 Fetch Counts & Live Sync ---------------------- */
   const updateCounts = async () => {
+    // 🚫 Skip updates while user is navigating
+    if (isNavigating) return;
+  
     try {
       const token = localStorage.getItem("token");
       const userId = localStorage.getItem("userId");
@@ -186,29 +191,33 @@ export default function Header({
   };
   
   useEffect(() => {
-    // ✅ Load cached values instantly for snappy UI
+    // 🚫 Skip updates on cart or checkout pages to prevent re-render navigation loop
+    if (pathname?.includes("/user/cart") || pathname?.includes("/user/checkout")) {
+      return;
+    }
+  
     const cachedCart = localStorage.getItem("cart_items");
     if (cachedCart) setCartCount(JSON.parse(cachedCart).length || 0);
   
     const cachedOrders = localStorage.getItem("orders_count");
     if (cachedOrders) setOrderCount(Number(cachedOrders));
   
-    // ✅ Always refresh latest
     updateCounts();
   
-    // ✅ Use global event bus listeners
     const offCart = listenEvent("cart-updated", updateCounts);
     const offOrders = listenEvent("orders-updated", updateCounts);
   
-    const interval = setInterval(updateCounts, 20000);
+    const interval = setInterval(() => {
+      if (!isNavigating) updateCounts();
+    }, 20000);
   
     return () => {
       offCart();
       offOrders();
       clearInterval(interval);
     };
-  }, []);  
-
+  }, [pathname]); // ✅ Stable dependency
+  
   /* ----------------------------- 🧠 Render --------------------------------- */
   return (
     <header className="w-full sticky top-0 z-50 bg-white shadow-sm">
@@ -283,7 +292,10 @@ export default function Header({
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
-              window.location.href = "/user/cart";
+              if (isNavigating) return;
+              setIsNavigating(true);
+              router.push("/user/cart");
+              setTimeout(() => setIsNavigating(false), 1500); // allow navigation to settle
             }}
             className="relative text-gray-700 hover:text-gray-900 focus:outline-none"
           >

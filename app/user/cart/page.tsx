@@ -5,28 +5,22 @@ import axios from "axios";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Header from "@/app/user/components/Header";
+import { updateCartCache } from "@/lib/cartUtils";
 
 /* -------------------------------------------------------------------------- */
-/* 💾 Utility: cache cart + dispatch update event                              */
-/* -------------------------------------------------------------------------- */
-export const updateCartCache = (items: any[]) => {
-  localStorage.setItem("cart_items", JSON.stringify(items));
-  window.dispatchEvent(new Event("cart-updated"));
-};
-
-/* -------------------------------------------------------------------------- */
-/* 🛒 Main Component                                                           */
+/* 🛒 Cart Page                                                               */
 /* -------------------------------------------------------------------------- */
 export default function CartPage() {
   const router = useRouter();
-  const [cartItems, setCartItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
   const storageBase = process.env.NEXT_PUBLIC_STORAGE_URL;
 
+  const [cartItems, setCartItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
   /* -------------------------------------------------------------------------- */
-  /* 🖼️ Get product image helper                                               */
+  /* 🖼️ Helper: get correct product image URL                                  */
   /* -------------------------------------------------------------------------- */
   const getProductImage = (product: any) => {
     if (!product?.images) return "/placeholder.png";
@@ -45,41 +39,44 @@ export default function CartPage() {
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 📡 Fetch cart from API (always latest)                                    */
+  /* ⚡ Load from cache instantly + background refresh                         */
   /* -------------------------------------------------------------------------- */
-  const fetchCart = async (force = false) => {
+  const fetchCart = async (showLoader = false) => {
     const token = localStorage.getItem("token");
     if (!token) return router.push("/user/login");
-    try {
-      setLoading(true);
 
-      // Load cached cart first (instant)
-      if (!force) {
-        const cached = localStorage.getItem("cart_items");
-        if (cached) setCartItems(JSON.parse(cached));
+    if (showLoader) setLoading(true);
+    setError("");
+
+    try {
+      // ✅ Step 1: Show cached immediately
+      const cached = localStorage.getItem("cart_items");
+      if (cached && !showLoader) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) setCartItems(parsed);
       }
 
-      // Always fetch fresh from backend
+      // ✅ Step 2: Background refresh (always)
       const res = await axios.get(`${apiBaseUrl}/cart`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const items = res.data.items || res.data.cart?.items || [];
       setCartItems(items);
-      updateCartCache(items);
+      updateCartCache(items); // cache + trigger event
     } catch (err) {
       console.error("❌ Failed to fetch cart:", err);
       setError("Unable to load cart items.");
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 🔁 Auto-refresh when “cart-updated” triggered                             */
+  /* 🔁 Auto-refresh whenever “cart-updated” event is fired                    */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
-    fetchCart();
-    const refreshListener = () => fetchCart(true);
+    fetchCart(); // Load instantly
+    const refreshListener = () => fetchCart(false); // fast refresh without loader
     window.addEventListener("cart-updated", refreshListener);
     return () => window.removeEventListener("cart-updated", refreshListener);
   }, []);
@@ -90,18 +87,20 @@ export default function CartPage() {
   const updateCart = async (productId: number, quantity: number) => {
     const token = localStorage.getItem("token");
     if (!token) return;
+
     try {
       const res = await axios.post(
         `${apiBaseUrl}/cart/update`,
         { product_id: productId, quantity },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
       const updated = res.data.items || [];
       setCartItems(updated);
       updateCartCache(updated);
     } catch (err) {
       console.error("❌ Update failed:", err);
-      fetchCart(true);
+      fetchCart(false);
     }
   };
 
@@ -131,23 +130,26 @@ export default function CartPage() {
   const handleRemove = async (productId: number) => {
     const token = localStorage.getItem("token");
     if (!token) return;
+
     setCartItems((prev) => prev.filter((it) => it.product.id !== productId));
+
     try {
       const res = await axios.post(
         `${apiBaseUrl}/cart/remove`,
         { product_id: productId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
       const updated = res.data.items || [];
       updateCartCache(updated);
     } catch (err) {
       console.error("❌ Failed to remove item:", err);
-      fetchCart(true);
+      fetchCart(false);
     }
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 💰 Subtotal & Checkout                                                     */
+  /* 💰 Subtotal + Checkout Navigation                                         */
   /* -------------------------------------------------------------------------- */
   const subtotal = cartItems.reduce((sum, it) => {
     const price = Number(it.product?.new_price ?? it.product?.price ?? 0);
@@ -162,7 +164,7 @@ export default function CartPage() {
   };
 
   /* -------------------------------------------------------------------------- */
-  /* ✨ Shimmer placeholder                                                     */
+  /* ✨ Shimmer placeholder for smooth loading                                 */
   /* -------------------------------------------------------------------------- */
   const ShimmerItem = () => (
     <div className="flex gap-4 items-center p-4 rounded-xl bg-gray-50 animate-pulse">
@@ -180,18 +182,10 @@ export default function CartPage() {
   /* -------------------------------------------------------------------------- */
   return (
     <div className="bg-gray-50 min-h-screen">
-      <Header
-        onCategorySelect={(cat) => {
-          if (cat) {
-            localStorage.setItem("selectedCategory", JSON.stringify(cat));
-            router.push("/user");
-          }
-        }}
-        onSubcategorySelect={(id) => {
-          if (id) router.push(`/user/subcategories?id=${id}`);
-        }}
-      />
+      {/* ✅ Fast Header */}
+      <Header onCategorySelect={() => {}} onSubcategorySelect={() => {}} />
 
+      {/* ✅ Content */}
       <div className="max-w-7xl mx-auto px-4 py-6 lg:flex lg:gap-6">
         {/* 🛒 CART SECTION */}
         <div className="flex-1 bg-white rounded-2xl shadow-md p-6">
