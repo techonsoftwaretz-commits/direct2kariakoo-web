@@ -40,8 +40,6 @@ export default function OrdersPage() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState(0);
 
-  const tabs = ["Active Orders", "Order History", "Refunds"];
-
   useEffect(() => {
     let cancelled = false;
 
@@ -53,10 +51,18 @@ export default function OrdersPage() {
 
         // ✅ Load cached immediately if recent
         if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY) {
-          const parsed = JSON.parse(cached);
-          if (!cancelled) {
-            setOrders(parsed);
-            setLoading(false);
+          try {
+            const parsed = JSON.parse(cached);
+            const normalized = Array.isArray(parsed)
+              ? parsed
+              : Object.values(parsed).flat();
+            if (!cancelled) {
+              setOrders(normalized);
+              setLoading(false);
+            }
+          } catch {
+            localStorage.removeItem(CACHE_KEY);
+            localStorage.removeItem(CACHE_TIME);
           }
         }
 
@@ -74,7 +80,13 @@ export default function OrdersPage() {
           });
           clearTimeout(timeout);
 
-          const fetchedOrders = res.data.orders || [];
+          let fetchedOrders = res.data.orders || [];
+
+          // ✅ Normalize if backend returns grouped object
+          if (!Array.isArray(fetchedOrders)) {
+            fetchedOrders = Object.values(fetchedOrders).flat();
+          }
+
           if (!cancelled) {
             setOrders(fetchedOrders);
             localStorage.setItem(CACHE_KEY, JSON.stringify(fetchedOrders));
@@ -82,7 +94,6 @@ export default function OrdersPage() {
           }
         } catch (err: any) {
           clearTimeout(timeout);
-          // 🧩 Ignore Abort errors quietly
           if (err.name === "CanceledError" || err.code === "ERR_CANCELED") {
             console.warn("⏱️ Order fetch timeout — using cache");
           } else {
@@ -90,7 +101,17 @@ export default function OrdersPage() {
             if (!cancelled) {
               const cached = localStorage.getItem(CACHE_KEY);
               if (cached) {
-                setOrders(JSON.parse(cached));
+                try {
+                  const parsed = JSON.parse(cached);
+                  const normalized = Array.isArray(parsed)
+                    ? parsed
+                    : Object.values(parsed).flat();
+                  setOrders(normalized);
+                } catch {
+                  localStorage.removeItem(CACHE_KEY);
+                  localStorage.removeItem(CACHE_TIME);
+                  setError("Failed to load your orders.");
+                }
               } else {
                 setError("Failed to load your orders.");
               }
@@ -103,7 +124,6 @@ export default function OrdersPage() {
     };
 
     fetchOrders();
-
     return () => {
       cancelled = true;
     };

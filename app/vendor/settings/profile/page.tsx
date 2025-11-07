@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   Loader2,
@@ -11,6 +11,9 @@ import {
   Store,
   Mail,
   Phone,
+  CreditCard,
+  Plus,
+  Trash2,
   X,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -23,13 +26,28 @@ export default function VendorProfilePage() {
   const [editingPhone, setEditingPhone] = useState(false);
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
-  const [showMapPicker, setShowMapPicker] = useState(false);
 
+  // Payment section
+  const [paymentOptions, setPaymentOptions] = useState<any[]>([]);
+  const [paymentTypes, setPaymentTypes] = useState<any[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<any>(null);
+
+  const [paymentForm, setPaymentForm] = useState({
+    type_id: "",
+    method_id: "",
+    account: "",
+  });
+
+  /* ---------------------------- Init ---------------------------- */
   useEffect(() => {
     fetchProfile();
+    fetchPaymentTypes();
   }, []);
 
-  // Fetch profile
+  /* ---------------------------- Fetch profile ---------------------------- */
   async function fetchProfile() {
     try {
       setLoading(true);
@@ -39,6 +57,8 @@ export default function VendorProfilePage() {
       setVendor(data.vendor || {});
       setPhone(data.vendor?.phone || "");
       setLocation(data.vendor?.business_address || "");
+      const payRes = await api.get("/vendor/payment-options");
+      setPaymentOptions(payRes.data || []);
     } catch (err) {
       console.error("Failed to fetch profile", err);
     } finally {
@@ -46,7 +66,26 @@ export default function VendorProfilePage() {
     }
   }
 
-  // Upload profile picture
+  /* ---------------------------- Payment Types ---------------------------- */
+  async function fetchPaymentTypes() {
+    try {
+      const res = await api.get("/vendor/payment-types");
+      setPaymentTypes(res.data);
+    } catch (err) {
+      console.error("Failed to fetch payment types", err);
+    }
+  }
+
+  async function fetchPaymentMethods(typeId: string) {
+    try {
+      const res = await api.get(`/vendor/payment-methods?type_id=${typeId}`);
+      setPaymentMethods(res.data);
+    } catch (err) {
+      console.error("Failed to fetch methods", err);
+    }
+  }
+
+  /* ---------------------------- Upload Logo ---------------------------- */
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -59,17 +98,16 @@ export default function VendorProfilePage() {
       await api.post("/vendor/update-profile", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      alert("Profile picture updated!");
       fetchProfile();
     } catch (err: any) {
-      console.error("Upload failed:", err.response?.data || err.message);
-      alert("Failed to upload picture. Please try again.");
+      alert("Failed to upload picture");
+      console.error("Upload failed:", err);
     } finally {
       setIsUploading(false);
     }
   }
 
-  // Update field (phone or address)
+  /* ---------------------------- Update Phone/Address ---------------------------- */
   async function handleUpdate(field: string, value: string) {
     if (!value) return alert("Value cannot be empty");
 
@@ -80,15 +118,82 @@ export default function VendorProfilePage() {
       await api.post("/vendor/update-profile", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      alert("Updated successfully!");
       fetchProfile();
     } catch (err: any) {
-      console.error("Update failed:", err.response?.data || err.message);
-      alert("Update failed: " + (err.response?.data?.message || "Server error"));
+      alert("Update failed");
+      console.error("Update failed:", err);
     }
   }
 
-  // Loading screen
+  /* ---------------------------- Add or Edit Payment ---------------------------- */
+  async function handleSavePayment() {
+    const { type_id, method_id, account } = paymentForm;
+    if (!type_id || !method_id || !account)
+      return alert("Please fill all fields");
+
+    const formData = new FormData();
+    formData.append("payment_type_id", type_id);
+    formData.append("payment_method_id", method_id);
+    formData.append("account", account);
+
+    try {
+      setSavingPayment(true);
+
+      if (editingPayment) {
+        // 🟡 Update existing payment option
+        await api.post(`/vendor/update-payment-option/${editingPayment.id}`, formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      } else {
+        // 🟢 Add new payment option
+        await api.post("/vendor/add-payment-option", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      }
+
+      await fetchProfile();
+      setShowPaymentModal(false);
+      setPaymentForm({ type_id: "", method_id: "", account: "" });
+      setEditingPayment(null);
+    } catch (err: any) {
+      alert("Failed to save payment option");
+      console.error("Save payment failed:", err);
+    } finally {
+      setSavingPayment(false);
+    }
+  }
+
+  /* ---------------------------- Delete Payment ---------------------------- */
+  async function handleDeletePayment(id: number) {
+    if (!confirm("Remove this payment method?")) return;
+    try {
+      await api.post(`/vendor/delete-payment-option/${id}`);
+      fetchProfile();
+    } catch (err: any) {
+      alert("Failed to delete payment option");
+      console.error("Delete failed:", err);
+    }
+  }
+
+  /* ---------------------------- Open Modal ---------------------------- */
+  function openPaymentModal(option?: any) {
+    if (option) {
+      // Editing existing payment
+      setEditingPayment(option);
+      setPaymentForm({
+        type_id: option.payment_type?.id || "",
+        method_id: option.payment_method?.id || "",
+        account: option.account || "",
+      });
+      fetchPaymentMethods(option.payment_type?.id);
+    } else {
+      // Adding new payment
+      setEditingPayment(null);
+      setPaymentForm({ type_id: "", method_id: "", account: "" });
+    }
+    setShowPaymentModal(true);
+  }
+
   if (loading)
     return (
       <div className="flex justify-center items-center h-screen">
@@ -101,13 +206,15 @@ export default function VendorProfilePage() {
     : "/placeholder.png";
 
   return (
-    <main className="min-h-screen bg-[#F9FAFB] pb-24 font-poppins">
+    <main className="min-h-screen bg-[#FAFAFA] pb-24 font-poppins">
+      {/* Header */}
       <header className="bg-white shadow-sm p-4 sticky top-0 z-30">
         <h1 className="text-lg font-semibold text-gray-800 text-center">
           My Profile
         </h1>
       </header>
 
+      {/* Main Body */}
       <div className="max-w-2xl mx-auto p-5">
         {/* Avatar */}
         <div className="flex flex-col items-center mb-8 relative">
@@ -119,7 +226,7 @@ export default function VendorProfilePage() {
               height={110}
               className="rounded-full object-cover border-4 border-white shadow-md"
             />
-            <label className="absolute bottom-0 right-0 bg-gray-100 p-2 rounded-full cursor-pointer hover:bg-gray-200 transition">
+            <label className="absolute bottom-0 right-0 bg-white p-2 rounded-full cursor-pointer shadow-sm hover:bg-gray-100 transition">
               {isUploading ? (
                 <Loader2 className="w-4 h-4 animate-spin text-yellow-500" />
               ) : (
@@ -139,23 +246,19 @@ export default function VendorProfilePage() {
           <p className="text-gray-500 text-sm">Vendor Account</p>
         </div>
 
-        {/* Business Name */}
+        {/* Vendor Info */}
         <ProfileCard
           icon={<Store className="w-5 h-5 text-yellow-600" />}
           title="Business Name"
           subtitle={vendor?.business_name || "-"}
         />
-
-        {/* Email */}
         <ProfileCard
           icon={<Mail className="w-5 h-5 text-yellow-600" />}
           title="Email"
           subtitle={user?.email || vendor?.email || "-"}
         />
-
-        {/* Phone */}
         <EditableRow
-          icon={<Phone className="w-5 h-5 text-yellow-600 mt-0.5" />}
+          icon={<Phone className="w-5 h-5 text-yellow-600" />}
           label="Phone"
           value={phone}
           editing={editingPhone}
@@ -163,58 +266,155 @@ export default function VendorProfilePage() {
           onSave={(v: string) => handleUpdate("phone", v)}
         />
 
-        {/* Location */}
-        <div className="bg-gray-100 rounded-xl p-4 mb-4 flex items-start justify-between">
-          <div className="flex items-start gap-3">
-            <MapPin className="w-5 h-5 text-yellow-600 mt-0.5" />
-            <div>
-              <h4 className="text-sm text-gray-600">Business Address</h4>
-              <p className="font-medium text-gray-800 mt-1">{location || "-"}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowMapPicker(true)}
-            className="text-yellow-600 hover:text-yellow-700 transition"
-          >
-            <Edit2 size={16} />
-          </button>
-        </div>
+        {/* Address */}
+        <ProfileCard
+          icon={<MapPin className="w-5 h-5 text-yellow-600" />}
+          title="Business Address"
+          subtitle={location || "-"}
+          action={
+            <button
+              onClick={() => alert("Map picker coming soon")}
+              className="text-yellow-600 hover:text-yellow-700"
+            >
+              <Edit2 size={16} />
+            </button>
+          }
+        />
 
-        {vendor?.is_approved === false && (
-          <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl text-sm text-orange-700 mt-6">
-            ⚠️ Your store is pending approval.
+        {/* Payment Options */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-yellow-600" />
+              <h4 className="text-sm font-medium text-gray-800">
+                Payment Options
+              </h4>
+            </div>
+            <button
+              onClick={() => openPaymentModal()}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-500 hover:bg-yellow-600 text-sm font-semibold text-black transition"
+            >
+              <Plus size={14} /> Add
+            </button>
           </div>
-        )}
+
+          {paymentOptions.length > 0 ? (
+            paymentOptions.map((opt: any) => (
+              <div
+                key={opt.id}
+                className="flex justify-between items-center bg-gray-50 hover:bg-gray-100 p-3 rounded-xl transition mb-2"
+              >
+                <div>
+                  <p className="text-sm font-medium text-gray-800">
+                    {opt.payment_type?.name || "-"} –{" "}
+                    {opt.payment_method?.name || "-"}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">{opt.account}</p>
+                </div>
+                <div className="flex gap-3 items-center">
+                  <button
+                    onClick={() => openPaymentModal(opt)}
+                    className="text-yellow-600 hover:text-yellow-700"
+                  >
+                    <Edit2 size={15} />
+                  </button>
+                  <button
+                    onClick={() => handleDeletePayment(opt.id)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-gray-500 italic mt-1">
+              No payment options added yet.
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Map Picker Modal */}
-      {showMapPicker && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-2xl w-[90%] max-w-lg shadow-lg overflow-hidden">
-            <div className="flex justify-between items-center px-4 py-3 border-b">
-              <h3 className="text-lg font-semibold text-gray-800">
-                Select Business Location
-              </h3>
-              <button
-                onClick={() => setShowMapPicker(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-4">
-              <MapPicker
-                onSelect={(addr: string, lat: number, lng: number) => {
-                  setLocation(addr);
-                  handleUpdate("business_address", addr);
+      {/* Add / Edit Payment Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm">
+          <div className="bg-white w-[90%] max-w-md rounded-3xl shadow-2xl p-6 relative animate-fade-in">
+            <button
+              onClick={() => setShowPaymentModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <X size={18} />
+            </button>
+
+            <h3 className="text-lg font-semibold text-gray-900 mb-5">
+              {editingPayment ? "Edit Payment Option" : "Add Payment Option"}
+            </h3>
+
+            <div className="space-y-4">
+              <select
+                value={paymentForm.type_id}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setPaymentForm((p) => ({ ...p, type_id: id, method_id: "" }));
+                  fetchPaymentMethods(id);
                 }}
-                initialAddress={location}
-              />
-              <button
-                onClick={() => setShowMapPicker(false)}
-                className="w-full mt-3 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold py-2 rounded-lg"
+                className="w-full border border-gray-200 rounded-xl p-2.5 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400 focus:bg-white"
               >
-                Done
+                <option value="">Select Type</option>
+                {paymentTypes.map((t: any) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={paymentForm.method_id}
+                onChange={(e) =>
+                  setPaymentForm((p) => ({
+                    ...p,
+                    method_id: e.target.value,
+                  }))
+                }
+                disabled={!paymentForm.type_id}
+                className="w-full border border-gray-200 rounded-xl p-2.5 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400 focus:bg-white disabled:opacity-50"
+              >
+                <option value="">Select Method</option>
+                {paymentMethods.map((m: any) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="text"
+                placeholder="Enter account / phone number"
+                value={paymentForm.account}
+                onChange={(e) =>
+                  setPaymentForm((p) => ({ ...p, account: e.target.value }))
+                }
+                className="w-full border border-gray-200 rounded-xl p-2.5 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400 focus:bg-white"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePayment}
+                disabled={savingPayment}
+                className="px-5 py-2 bg-yellow-500 hover:bg-yellow-600 text-black font-semibold rounded-xl transition disabled:opacity-60"
+              >
+                {savingPayment ? (
+                  <Loader2 className="w-4 h-4 animate-spin inline-block" />
+                ) : (
+                  "Save"
+                )}
               </button>
             </div>
           </div>
@@ -224,23 +424,28 @@ export default function VendorProfilePage() {
   );
 }
 
-// ------------------------ Reusable Components ------------------------
+/* ----------------------------- Subcomponents ----------------------------- */
 function ProfileCard({
   icon,
   title,
   subtitle,
+  action,
 }: {
-  icon: React.ReactNode;
+  icon: any;
   title: string;
   subtitle: string;
+  action?: any;
 }) {
   return (
-    <div className="bg-gray-100 rounded-xl p-4 mb-4 flex items-start gap-3">
-      <div>{icon}</div>
-      <div>
-        <h4 className="text-sm text-gray-600">{title}</h4>
-        <p className="font-medium text-gray-800 mt-1">{subtitle}</p>
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex items-start justify-between">
+      <div className="flex items-start gap-3">
+        {icon}
+        <div>
+          <h4 className="text-sm text-gray-600">{title}</h4>
+          <p className="font-medium text-gray-900 mt-1">{subtitle}</p>
+        </div>
       </div>
+      {action && action}
     </div>
   );
 }
@@ -252,18 +457,11 @@ function EditableRow({
   editing,
   setEditing,
   onSave,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  editing: boolean;
-  setEditing: (b: boolean) => void;
-  onSave: (val: string) => void;
-}) {
+}: any) {
   const [val, setVal] = useState(value);
 
   return (
-    <div className="bg-gray-100 rounded-xl p-4 mb-4 flex items-start justify-between">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex items-start justify-between">
       <div className="flex items-start gap-3">
         {icon}
         <div>
@@ -273,7 +471,7 @@ function EditableRow({
               <input
                 value={val}
                 onChange={(e) => setVal(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2 py-1 text-sm w-44 text-gray-900 bg-white focus:ring-2 focus:ring-yellow-400 outline-none caret-yellow-500"
+                className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-44 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400"
               />
               <button
                 onClick={() => {
@@ -286,7 +484,7 @@ function EditableRow({
               </button>
             </div>
           ) : (
-            <p className="font-medium text-gray-800 mt-1">{value || "-"}</p>
+            <p className="font-medium text-gray-900 mt-1">{value || "-"}</p>
           )}
         </div>
       </div>
@@ -298,74 +496,6 @@ function EditableRow({
           <Edit2 size={16} />
         </button>
       )}
-    </div>
-  );
-}
-
-// ✅ Fixed MapPicker — now shows readable place names instead of lat/lng
-function MapPicker({
-  onSelect,
-  initialAddress,
-}: {
-  onSelect: (address: string, lat: number, lng: number) => void;
-  initialAddress?: string;
-}) {
-  const mapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!window.google || !mapRef.current) return;
-
-    const defaultPosition = { lat: -6.8, lng: 39.28 };
-    const map = new google.maps.Map(mapRef.current, {
-      center: defaultPosition,
-      zoom: 12,
-    });
-
-    const input = document.getElementById("placeInput") as HTMLInputElement;
-    const autocomplete = new google.maps.places.Autocomplete(input);
-    autocomplete.bindTo("bounds", map);
-
-    const marker = new google.maps.Marker({ map });
-    const geocoder = new google.maps.Geocoder();
-
-    // When user selects place from search box
-    autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-      if (!place.geometry || !place.geometry.location) return;
-      map.setCenter(place.geometry.location);
-      marker.setPosition(place.geometry.location);
-      const lat = place.geometry.location.lat();
-      const lng = place.geometry.location.lng();
-      onSelect(place.formatted_address || "", lat, lng);
-    });
-
-    // When user taps on map
-    map.addListener("click", (e: google.maps.MapMouseEvent) => {
-      if (!e.latLng) return;
-      const lat = e.latLng.lat();
-      const lng = e.latLng.lng();
-      marker.setPosition(e.latLng);
-
-      // Reverse geocode to get address
-      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        if (status === "OK" && results && results[0]) {
-          const address = results[0].formatted_address;
-          onSelect(address, lat, lng);
-        } else {
-          onSelect("Unknown location", lat, lng);
-        }
-      });
-    });
-  }, []);
-
-  return (
-    <div>
-      <input
-        id="placeInput"
-        className="w-full border p-2 rounded mb-2 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-yellow-400 caret-yellow-500"
-        placeholder={initialAddress || "Search or tap on map"}
-      />
-      <div ref={mapRef} className="w-full h-64 rounded-lg border" />
     </div>
   );
 }

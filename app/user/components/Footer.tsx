@@ -5,6 +5,9 @@ import axios from "axios";
 import Image from "next/image";
 import { Facebook, Instagram, Linkedin, X, Info, Mail } from "lucide-react";
 
+/* -------------------------------------------------------------------------- */
+/* 🧠 Interfaces                                                              */
+/* -------------------------------------------------------------------------- */
 interface Category {
   id: number;
   name: string;
@@ -15,6 +18,9 @@ interface Subcategory {
   name: string;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 💾 Cache Configuration                                                     */
+/* -------------------------------------------------------------------------- */
 const memoryCache: {
   categories?: Category[];
   subcategoriesMap?: Record<number, Subcategory[]>;
@@ -22,8 +28,11 @@ const memoryCache: {
 } = {};
 
 const CACHE_KEY = "d2k_footer_cache";
-const CACHE_TTL = 1000 * 60 * 10;
+const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
 
+/* -------------------------------------------------------------------------- */
+/* 🌍 Main Footer Component                                                   */
+/* -------------------------------------------------------------------------- */
 export default function Footer() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategoriesMap, setSubcategoriesMap] = useState<Record<number, Subcategory[]>>({});
@@ -31,6 +40,8 @@ export default function Footer() {
 
   useEffect(() => {
     const now = Date.now();
+
+    // ✅ 1️⃣ Try memory cache
     if (
       memoryCache.categories &&
       memoryCache.subcategoriesMap &&
@@ -43,6 +54,7 @@ export default function Footer() {
       return;
     }
 
+    // ✅ 2️⃣ Try localStorage cache
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
       try {
@@ -51,16 +63,21 @@ export default function Footer() {
           setCategories(parsed.categories || []);
           setSubcategoriesMap(parsed.subcategoriesMap || {});
           setLoading(false);
+          return;
         }
-      } catch {}
+      } catch {
+        console.warn("⚠️ Failed to parse cached footer data");
+      }
     }
 
+    // ✅ 3️⃣ Fetch fresh data if not cached
     const fetchData = async () => {
       try {
         const catRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/categories`);
         const cats = Array.isArray(catRes.data) ? catRes.data : [];
         setCategories(cats);
 
+        // Parallel fetch subcategories for each category
         const subResults = await Promise.all(
           cats.map(async (cat) => {
             try {
@@ -77,6 +94,7 @@ export default function Footer() {
         const map: Record<number, Subcategory[]> = {};
         subResults.forEach(([id, subs]) => (map[id as number] = subs as Subcategory[]));
 
+        // ✅ Save in both caches
         memoryCache.categories = cats;
         memoryCache.subcategoriesMap = map;
         memoryCache.timestamp = now;
@@ -86,7 +104,7 @@ export default function Footer() {
           JSON.stringify({ categories: cats, subcategoriesMap: map, timestamp: now })
         );
       } catch (err) {
-        console.error("Footer fetch error:", err);
+        console.error("❌ Footer fetch error:", err);
       } finally {
         setLoading(false);
       }
@@ -95,6 +113,9 @@ export default function Footer() {
     fetchData();
   }, []);
 
+  /* -------------------------------------------------------------------------- */
+  /* 💅 Render                                                                 */
+  /* -------------------------------------------------------------------------- */
   return (
     <footer className="bg-white text-gray-700 border-t border-gray-200">
       {/* ==================== HELP SECTION ==================== */}
@@ -104,7 +125,6 @@ export default function Footer() {
           Reach out to us through any of these support channels
         </p>
 
-        {/* ✅ Desktop view: same inline layout; Mobile: stacked & centered */}
         <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center md:justify-start gap-6 sm:gap-10">
           {/* Help Center */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-center sm:text-left">
@@ -145,27 +165,39 @@ export default function Footer() {
       </div>
 
       {/* ==================== CATEGORY GRID ==================== */}
-      <div className="px-6 md:px-16 lg:px-24 py-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-8 text-sm bg-white">
+      <div className="px-6 md:px-16 lg:px-24 py-10 bg-white">
         {loading ? (
-          [...Array(6)].map((_, i) => (
-            <div key={i}>
-              <div className="h-4 w-1/2 bg-gray-200 rounded mb-3 animate-pulse" />
-              {[...Array(6)].map((__, j) => (
-                <div key={j} className="h-3 w-3/4 bg-gray-100 rounded mb-2 animate-pulse" />
-              ))}
-            </div>
-          ))
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-8">
+            {[...Array(6)].map((_, i) => (
+              <div key={i}>
+                <div className="h-4 w-1/2 bg-gray-200 rounded mb-3 animate-pulse" />
+                {[...Array(5)].map((__, j) => (
+                  <div
+                    key={j}
+                    className="h-3 w-3/4 bg-gray-100 rounded mb-2 animate-pulse"
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
         ) : categories.length > 0 ? (
-          categories.slice(0, 6).map((cat) => (
-            <FooterColumn key={cat.id} title={cat.name} links={subcategoriesMap[cat.id] || []} />
-          ))
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-8 text-sm">
+            {categories.slice(0, 6).map((cat) => (
+              <FooterColumn
+                key={cat.id}
+                title={cat.name}
+                links={subcategoriesMap[cat.id] || []}
+              />
+            ))}
+          </div>
         ) : (
-          <p className="text-gray-500">No categories available</p>
+          <p className="text-gray-500 text-center">No categories available</p>
         )}
       </div>
 
       {/* ==================== APP DOWNLOAD + SOCIAL ==================== */}
       <div className="px-6 md:px-16 lg:px-24 py-8 border-t border-gray-200 flex flex-col md:flex-row items-center justify-between gap-8 bg-white">
+        {/* 🎯 App Section */}
         <div className="text-center md:text-left">
           <h4 className="font-semibold text-gray-800 mb-4 uppercase tracking-wide">
             Shop On The Go
@@ -177,6 +209,7 @@ export default function Footer() {
           </div>
         </div>
 
+        {/* 🎯 Social Section */}
         <div className="text-center md:text-right">
           <h4 className="font-semibold text-gray-800 mb-4 uppercase tracking-wide">
             Connect With Us

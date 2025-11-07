@@ -8,7 +8,7 @@ import Header from "@/app/user/components/Header";
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"mobile" | "card" | "lipa">("mobile");
+  const [tab, setTab] = useState<"mobile" | "card" | "manual">("mobile");
   const [phone, setPhone] = useState("");
   const [cardNumber, setCardNumber] = useState("");
   const [expiry, setExpiry] = useState("");
@@ -18,16 +18,16 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [cartItems, setCartItems] = useState<any[]>([]);
+  const [vendorGroups, setVendorGroups] = useState<any[]>([]);
   const [isDesktop, setIsDesktop] = useState(false);
 
   const [networks] = useState(["M-Pesa", "Airtel Money", "Tigo Pesa", "HaloPesa"]);
   const [selectedNetwork, setSelectedNetwork] = useState("M-Pesa");
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
-  const lipaNamba = "555999";
   const businessName = "Direct2Kariakoo";
 
-  /* ✅ Responsive layout detection */
+  // ✅ Responsive detection
   useEffect(() => {
     const updateLayout = () => setIsDesktop(window.innerWidth >= 1024);
     updateLayout();
@@ -35,9 +35,8 @@ export default function CheckoutPage() {
     return () => window.removeEventListener("resize", updateLayout);
   }, []);
 
-  /* ✅ Fetch total and cart items */
+  // ✅ Fetch cart
   useEffect(() => {
-    const checkoutTotal = localStorage.getItem("checkout_total");
     const token = localStorage.getItem("token");
     if (!token) return router.push("/user/login");
 
@@ -54,42 +53,52 @@ export default function CheckoutPage() {
         );
         setTotal(totalAmount);
       } catch (err) {
-        console.error("❌ Failed to fetch cart total:", err);
+        console.error("❌ Failed to load cart:", err);
       }
     };
 
-    const buyNow = new URLSearchParams(window.location.search).get("buyNow");
+    fetchCart();
+  }, [apiBaseUrl, router]);
 
-    if (buyNow === "true") {
-      // ✅ Handle "Buy Now" single-product checkout
-      const storedItems = localStorage.getItem("checkout_items");
-      if (storedItems) {
-        try {
-          const parsed = JSON.parse(storedItems);
-          setCartItems(parsed);
-          const storedTotal = localStorage.getItem("checkout_total");
-          setTotal(storedTotal ? parseFloat(storedTotal) : 0);
-        } catch (e) {
-          console.error("Failed to parse checkout_items:", e);
+  // ✅ Fetch vendor groups for Manual Payment tab
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (tab !== "manual" || !cartItems.length) return;
+
+    const fetchVendors = async () => {
+      try {
+        const itemsPayload = cartItems.map((item) => ({
+          product_id: item.product_id || item.product?.id,
+          quantity: item.quantity,
+        }));
+
+        const res = await axios.post(
+          `${apiBaseUrl}/checkout/vendors`, // ✅ correct route
+          { items: itemsPayload },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        if (res.data.vendors) {
+          setVendorGroups(res.data.vendors);
+        } else {
+          setVendorGroups([]);
         }
+      } catch (err: any) {
+        console.error("❌ Failed to fetch vendor groups:", err.response?.data || err.message);
+        setVendorGroups([]);
       }
-    } else if (checkoutTotal) {
-      setTotal(Number(checkoutTotal));
-    } else {
-      fetchCart();
-    }
-    
-  }, []);
+    };
 
-  /* ✅ Format Card Number */
+    fetchVendors();
+  }, [tab, cartItems, apiBaseUrl]);
+
+  // ✅ Card formatting
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, "");
-    value = value.substring(0, 16);
+    let value = e.target.value.replace(/\D/g, "").substring(0, 16);
     const groups = value.match(/.{1,4}/g);
     setCardNumber(groups ? groups.join(" ") : value);
   };
 
-  /* ✅ Format Expiry */
   const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, "");
     if (value.length > 4) value = value.substring(0, 4);
@@ -97,65 +106,39 @@ export default function CheckoutPage() {
     setExpiry(value);
   };
 
-  /* ✅ Main Payment Logic */
-  const handlePayment = async (isLipaConfirm = false) => {
+  // ✅ Payment logic
+  const handlePayment = async (isManualConfirm = false) => {
     const token = localStorage.getItem("token");
     if (!token) return router.push("/user/login");
-  
+
     try {
       setLoading(true);
-  
-      // ✅ Get items to pay for
-      let itemsPayload = cartItems.map((item) => ({
+      const itemsPayload = cartItems.map((item) => ({
         product_id: item.product_id || item.product?.id,
         quantity: item.quantity,
       }));
-  
-      if (!itemsPayload.length) {
-        const savedCart = localStorage.getItem("cart_items");
-        if (savedCart) {
-          const parsed = JSON.parse(savedCart);
-          itemsPayload = parsed.map((it: any) => ({
-            product_id: it.product_id || it.product?.id,
-            quantity: it.quantity,
-          }));
-        }
-      }
-  
-      if (!itemsPayload.length) {
-        alert("Cart is empty — please add items first.");
-        return;
-      }
-  
-      // ✅ Payment methods
+
+      if (!itemsPayload.length) return alert("Cart is empty.");
+
+      // --- MOBILE MONEY ---
       if (tab === "mobile") {
-        if (!phone.trim()) return alert("Please enter your mobile number");
-  
+        if (!phone.trim()) return alert("Enter your mobile number");
+
         await axios.post(
           `${apiBaseUrl}/checkout`,
           { phone, provider: selectedNetwork, items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-  
-        // ✅ Clear backend cart
-        await axios.delete(`${apiBaseUrl}/cart/clear`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-  
-        // ✅ Clear local storage cart
-        localStorage.removeItem("cart_items");
-        localStorage.removeItem("checkout_total");
-        window.dispatchEvent(new Event("cart-updated"));
-        window.dispatchEvent(new Event("orders-updated"));
-  
+
         alert("Payment initiated! Confirm on your mobile device.");
-        router.push("/user/orders");
+        clearCartAndGo();
       }
-  
+
+      // --- CARD PAYMENT ---
       else if (tab === "card") {
         if (!cardNumber || !expiry || !cvv || !name)
-          return alert("Please fill in all card details");
-  
+          return alert("Please fill all card details");
+
         await axios.post(
           `${apiBaseUrl}/checkout/card`,
           {
@@ -168,62 +151,54 @@ export default function CheckoutPage() {
           },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-  
-        // ✅ Clear backend + local cart
-        await axios.delete(`${apiBaseUrl}/cart/clear`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-        localStorage.removeItem("cart_items");
-        localStorage.removeItem("checkout_total");
-        window.dispatchEvent(new Event("cart-updated"));
-        window.dispatchEvent(new Event("orders-updated"));
-  
+
         alert("Card payment successful!");
-        router.push("/user/orders");
+        clearCartAndGo();
       }
-  
-      else if (tab === "lipa" && isLipaConfirm) {
+
+      // --- MANUAL PAYMENT ---
+      else if (tab === "manual" && isManualConfirm) {
         await axios.post(
-          `${apiBaseUrl}/checkout/confirm-lipa`,
-          { total, reference: "LipaNambaManualConfirm", items: itemsPayload },
+          `${apiBaseUrl}/checkout/confirm-manual`,
+          { total, reference: "ManualConfirm", items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
-        );
-  
-        await axios.delete(`${apiBaseUrl}/cart/clear`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => {});
-        localStorage.removeItem("cart_items");
-        localStorage.removeItem("checkout_total");
-        window.dispatchEvent(new Event("cart-updated"));
-        window.dispatchEvent(new Event("orders-updated"));
-  
-        alert("Payment confirmed! Your order has been placed successfully.");
-        router.push("/user/orders");
+        );      
+
+        alert("Manual payment confirmed. Orders placed successfully!");
+        clearCartAndGo();
       }
     } catch (err: any) {
       console.error("❌ Payment Error:", err.response?.data || err.message);
-      alert(
-        err.response?.data?.message || "Payment failed. Please try again."
-      );
+      alert(err.response?.data?.message || "Payment failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
-  
-  /* ✅ Handle Back Arrow */
+
+  const clearCartAndGo = async () => {
+    const token = localStorage.getItem("token");
+    try {
+      await axios.post(`${apiBaseUrl}/cart/clear`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {}
+    localStorage.removeItem("cart_items");
+    localStorage.removeItem("checkout_total");
+    window.dispatchEvent(new Event("cart-updated"));
+    window.dispatchEvent(new Event("orders-updated"));
+    router.push("/user/orders");
+  };
+
   const handleBack = () => {
     if (window.history.length > 1) router.back();
     else router.push("/user/cart");
   };
 
+  // ✅ Render
   return (
     <div className="bg-gray-50 min-h-screen">
-      {/* ✅ Desktop Header */}
-      {isDesktop && (
-        <Header onCategorySelect={() => {}} onSubcategorySelect={() => {}} />
-      )}
+      {isDesktop && <Header onCategorySelect={() => {}} onSubcategorySelect={() => {}} />}
 
-      {/* ✅ Mobile Top Bar with Back Arrow */}
       {!isDesktop && (
         <div className="sticky top-0 z-50 bg-white border-b border-gray-200 flex items-center justify-between px-4 py-3 shadow-sm">
           <button
@@ -233,15 +208,14 @@ export default function CheckoutPage() {
             <ArrowLeft size={22} className="text-yellow-500" />
           </button>
           <h1 className="text-[15px] font-semibold text-gray-800">Checkout</h1>
-          <div className="w-8" /> {/* spacer */}
+          <div className="w-8" />
         </div>
       )}
 
-      {/* ✅ Checkout Layout */}
       <div className="max-w-7xl mx-auto px-4 py-10 flex flex-col lg:flex-row gap-8">
-        {/* LEFT COLUMN */}
+        {/* LEFT */}
         <div className="flex-1 space-y-8">
-          {/* Delivery Address */}
+          {/* Address */}
           <section className="bg-white rounded-xl p-6 shadow-sm">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-lg font-semibold text-gray-800">Delivery Address</h3>
@@ -250,7 +224,7 @@ export default function CheckoutPage() {
               </button>
             </div>
             <p className="text-sm text-gray-600">
-              Use your default account address or add a new one.
+              Use your default address or add a new one.
             </p>
           </section>
 
@@ -260,136 +234,88 @@ export default function CheckoutPage() {
 
             {/* Tabs */}
             <div className="flex gap-4 mb-6">
-              <button
-                onClick={() => setTab("mobile")}
-                className={`flex-1 border rounded-lg py-2 text-sm font-medium transition ${
-                  tab === "mobile"
-                    ? "border-yellow-400 bg-yellow-50 text-yellow-700"
-                    : "border-gray-200 text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                Mobile Money
-              </button>
-              <button
-                onClick={() => setTab("card")}
-                className={`flex-1 border rounded-lg py-2 text-sm font-medium transition ${
-                  tab === "card"
-                    ? "border-yellow-400 bg-yellow-50 text-yellow-700"
-                    : "border-gray-200 text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                Card
-              </button>
-              <button
-                onClick={() => setTab("lipa")}
-                className={`flex-1 border rounded-lg py-2 text-sm font-medium transition ${
-                  tab === "lipa"
-                    ? "border-yellow-400 bg-yellow-50 text-yellow-700"
-                    : "border-gray-200 text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                Lipa Namba
-              </button>
+              {["mobile", "card", "manual"].map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setTab(key as any)}
+                  className={`flex-1 border rounded-lg py-2 text-sm font-medium transition ${
+                    tab === key
+                      ? "border-yellow-400 bg-yellow-50 text-yellow-700"
+                      : "border-gray-200 text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  {key === "mobile" ? "Mobile Money" : key === "card" ? "Card" : "Manual Payment"}
+                </button>
+              ))}
             </div>
 
-            {/* ✅ MOBILE MONEY */}
+            {/* --- MOBILE --- */}
             {tab === "mobile" && (
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Select Network
-                  </label>
-                  <div className="flex gap-2 flex-wrap">
-                    {networks.map((net) => (
-                      <button
-                        key={net}
-                        onClick={() => setSelectedNetwork(net)}
-                        className={`px-4 py-2 rounded-lg border text-sm transition ${
-                          selectedNetwork === net
-                            ? "bg-yellow-400 border-yellow-400 text-black font-medium"
-                            : "bg-gray-100 border-gray-200 text-gray-700"
-                        }`}
-                      >
-                        {net}
-                      </button>
-                    ))}
-                  </div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">
+                  Select Network
+                </label>
+                <div className="flex gap-2 flex-wrap mb-3">
+                  {networks.map((net) => (
+                    <button
+                      key={net}
+                      onClick={() => setSelectedNetwork(net)}
+                      className={`px-4 py-2 rounded-lg border text-sm transition ${
+                        selectedNetwork === net
+                          ? "bg-yellow-400 border-yellow-400 text-black font-medium"
+                          : "bg-gray-100 border-gray-200 text-gray-700"
+                      }`}
+                    >
+                      {net}
+                    </button>
+                  ))}
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Mobile Money Number
-                  </label>
-                  <input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="07XXXXXXXX"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                  />
-                </div>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="07XXXXXXXX"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                />
               </div>
             )}
 
-            {/* ✅ CARD PAYMENT */}
+            {/* --- CARD --- */}
             {tab === "card" && (
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Card Number
-                  </label>
-                  <input
-                    type="text"
-                    value={cardNumber}
-                    onChange={handleCardNumberChange}
-                    placeholder="1234 5678 9012 3456"
-                    maxLength={19}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-yellow-400 tracking-widest"
-                  />
-                </div>
-
+                <input
+                  type="text"
+                  value={cardNumber}
+                  onChange={handleCardNumberChange}
+                  placeholder="1234 5678 9012 3456"
+                  maxLength={19}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400 tracking-widest"
+                />
                 <div className="flex gap-3">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-600 mb-1">
-                      Expiry (MM/YY)
-                    </label>
-                    <input
-                      type="text"
-                      value={expiry}
-                      onChange={handleExpiryChange}
-                      placeholder="MM/YY"
-                      maxLength={5}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-600 mb-1">
-                      CVV
-                    </label>
-                    <input
-                      type="password"
-                      value={cvv}
-                      onChange={(e) => setCvv(e.target.value)}
-                      placeholder="***"
-                      maxLength={4}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">
-                    Card Holder Name
-                  </label>
                   <input
                     type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="John Doe"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    value={expiry}
+                    onChange={handleExpiryChange}
+                    placeholder="MM/YY"
+                    maxLength={5}
+                    className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400"
+                  />
+                  <input
+                    type="password"
+                    value={cvv}
+                    onChange={(e) => setCvv(e.target.value)}
+                    placeholder="CVV"
+                    maxLength={4}
+                    className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400"
                   />
                 </div>
-
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Card Holder Name"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400"
+                />
                 <div className="flex items-center">
                   <input
                     type="checkbox"
@@ -402,39 +328,57 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* ✅ LIPA NAMBA */}
-            {tab === "lipa" && (
+            {/* --- MANUAL PAYMENT --- */}
+            {tab === "manual" && (
               <div className="space-y-6 text-gray-700">
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 text-center">
-                  <p className="text-sm">Business Name:</p>
-                  <p className="text-lg font-bold text-yellow-600">{businessName}</p>
-                  <p className="mt-2 text-sm">Lipa Namba:</p>
-                  <p className="text-2xl font-bold text-gray-900">{lipaNamba}</p>
-                </div>
+                {vendorGroups.length === 0 && (
+                  <p className="text-sm text-gray-500">Fetching vendor details...</p>
+                )}
 
-                <div>
-                  <p className="font-semibold mb-2 text-sm">How to Pay via USSD:</p>
-                  <ul className="list-disc pl-5 text-xs space-y-2">
-                    <li>
-                      <b>M-Pesa:</b> Dial *150*00# → Lipa kwa M-Pesa → Lipa Namba → Enter {lipaNamba}
-                    </li>
-                    <li>
-                      <b>Tigo Pesa:</b> Dial *150*01# → Lipa Kwa Simu → Ingiza Lipa Namba → Enter {lipaNamba}
-                    </li>
-                    <li>
-                      <b>Airtel Money:</b> Dial *150*60# → Lipa kwa Airtel Money → Enter {lipaNamba}
-                    </li>
-                    <li>
-                      <b>HaloPesa:</b> Dial *150*88# → Lipa kwa HaloPesa → Enter {lipaNamba}
-                    </li>
-                  </ul>
-                </div>
+                {vendorGroups.map((group) => (
+                  <div
+                    key={group.vendor.id}
+                    className="border border-gray-200 rounded-xl p-4 bg-gray-50"
+                  >
+                    <h4 className="font-semibold text-gray-800 mb-2">
+                      Vendor: {group.vendor.name}
+                    </h4>
 
-                <p className="text-xs text-gray-500 text-center">
-                  After payment, confirm via WhatsApp or call <b>+255 700 000 000</b>
-                </p>
+                    <ul className="text-sm text-gray-700 space-y-1 mb-3">
+                      {group.items.map((it: any) => (
+                        <li key={it.id} className="flex justify-between">
+                          <span>
+                            {it.name} × {it.quantity}
+                          </span>
+                          <span className="text-yellow-600">
+                            TZS {(it.price * it.quantity).toLocaleString()}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
 
-                {/* ✅ Confirm Payment Button */}
+                    <div className="text-sm font-medium text-gray-800 mb-2">
+                      Total:{" "}
+                      <span className="text-yellow-600">
+                        TZS {group.total.toLocaleString()}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-gray-500 mb-1">Payment Options:</p>
+                    <ul className="text-xs text-gray-700">
+                      {group.vendor.payment_options.length ? (
+                        group.vendor.payment_options.map((opt: any) => (
+                          <li key={opt.id}>
+                            {opt.method}: <b>{opt.account}</b>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="text-gray-400">No payment methods added</li>
+                      )}
+                    </ul>
+                  </div>
+                ))}
+
                 <button
                   onClick={() => handlePayment(true)}
                   disabled={loading}
@@ -452,27 +396,24 @@ export default function CheckoutPage() {
           </section>
         </div>
 
-        {/* ✅ RIGHT COLUMN - Summary */}
+        {/* RIGHT */}
         <aside className="lg:w-[30%]">
           <div className="bg-white rounded-xl p-6 shadow-sm sticky top-24">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Summary</h3>
-
             <div className="flex justify-between text-sm mb-2">
               <span>Subtotal</span>
               <span className="font-medium">TZS {total.toLocaleString()}</span>
             </div>
-
             <div className="flex justify-between text-sm mb-2">
               <span>Delivery fee</span>
               <span className="font-medium text-green-600">-</span>
             </div>
-
             <div className="flex justify-between text-base font-semibold border-t border-gray-200 pt-3 mt-2">
               <span>Total</span>
               <span className="text-yellow-600 font-bold">TZS {total.toLocaleString()}</span>
             </div>
 
-            {tab !== "lipa" && (
+            {tab !== "manual" && (
               <button
                 onClick={() => handlePayment()}
                 disabled={loading}
