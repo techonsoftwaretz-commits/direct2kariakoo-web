@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Phone, MapPin } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface Product {
   name: string;
@@ -27,6 +28,9 @@ interface Order {
   vendor?: Vendor;
 }
 
+/* -------------------------------------------------------------------------- */
+/* ⚡ Cache settings                                                          */
+/* -------------------------------------------------------------------------- */
 const CACHE_KEY = "d2k_orders_cache";
 const CACHE_TIME = "d2k_orders_cache_time";
 const CACHE_EXPIRY = 1000 * 60 * 10; // 10 minutes
@@ -34,92 +38,58 @@ const CACHE_EXPIRY = 1000 * 60 * 10; // 10 minutes
 export default function OrdersPage() {
   const router = useRouter();
   const api = process.env.NEXT_PUBLIC_API_URL;
+  const storageUrl = process.env.NEXT_PUBLIC_STORAGE_URL;
 
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [selected, setSelected] = useState(0);
+  const [isFetching, setIsFetching] = useState(false);
+  const [loadedFromCache, setLoadedFromCache] = useState(false);
 
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Load orders (cache-first)                                               */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     let cancelled = false;
 
     const fetchOrders = async () => {
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        const cachedTime = localStorage.getItem(CACHE_TIME);
-        const now = Date.now();
+      const now = Date.now();
+      const cached = localStorage.getItem(CACHE_KEY);
+      const cachedTime = localStorage.getItem(CACHE_TIME);
 
-        // ✅ Load cached immediately if recent
-        if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY) {
-          try {
-            const parsed = JSON.parse(cached);
-            const normalized = Array.isArray(parsed)
-              ? parsed
-              : Object.values(parsed).flat();
-            if (!cancelled) {
-              setOrders(normalized);
-              setLoading(false);
-            }
-          } catch {
-            localStorage.removeItem(CACHE_KEY);
-            localStorage.removeItem(CACHE_TIME);
-          }
-        }
-
-        const token = localStorage.getItem("token");
-        if (!token) return router.push("/user/login");
-
-        // ✅ Safe timeout (5s)
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-
+      if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY) {
         try {
-          const res = await axios.get(`${api}/orders`, {
-            headers: { Authorization: `Bearer ${token}` },
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-
-          let fetchedOrders = res.data.orders || [];
-
-          // ✅ Normalize if backend returns grouped object
-          if (!Array.isArray(fetchedOrders)) {
-            fetchedOrders = Object.values(fetchedOrders).flat();
-          }
-
-          if (!cancelled) {
-            setOrders(fetchedOrders);
-            localStorage.setItem(CACHE_KEY, JSON.stringify(fetchedOrders));
-            localStorage.setItem(CACHE_TIME, now.toString());
-          }
-        } catch (err: any) {
-          clearTimeout(timeout);
-          if (err.name === "CanceledError" || err.code === "ERR_CANCELED") {
-            console.warn("⏱️ Order fetch timeout — using cache");
-          } else {
-            console.error("❌ API Error:", err);
-            if (!cancelled) {
-              const cached = localStorage.getItem(CACHE_KEY);
-              if (cached) {
-                try {
-                  const parsed = JSON.parse(cached);
-                  const normalized = Array.isArray(parsed)
-                    ? parsed
-                    : Object.values(parsed).flat();
-                  setOrders(normalized);
-                } catch {
-                  localStorage.removeItem(CACHE_KEY);
-                  localStorage.removeItem(CACHE_TIME);
-                  setError("Failed to load your orders.");
-                }
-              } else {
-                setError("Failed to load your orders.");
-              }
-            }
-          }
+          const parsed = JSON.parse(cached);
+          setOrders(parsed);
+          setLoadedFromCache(true);
+        } catch {
+          localStorage.removeItem(CACHE_KEY);
+          localStorage.removeItem(CACHE_TIME);
         }
+      }
+
+      const token = localStorage.getItem("token");
+      if (!token) return router.push("/user/login");
+
+      try {
+        setIsFetching(true);
+        const res = await axios.get(`${api}/orders`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        let fetchedOrders = res.data.orders || [];
+        if (!Array.isArray(fetchedOrders)) {
+          fetchedOrders = Object.values(fetchedOrders).flat();
+        }
+
+        if (!cancelled) {
+          setOrders(fetchedOrders);
+          localStorage.setItem(CACHE_KEY, JSON.stringify(fetchedOrders));
+          localStorage.setItem(CACHE_TIME, now.toString());
+        }
+      } catch (err) {
+        console.error("❌ Fetch orders error:", err);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setIsFetching(false);
       }
     };
 
@@ -129,7 +99,9 @@ export default function OrdersPage() {
     };
   }, [api, router]);
 
-  // 🔁 Categorize orders
+  /* -------------------------------------------------------------------------- */
+  /* 🧩 Categorize orders                                                       */
+  /* -------------------------------------------------------------------------- */
   const activeOrders = orders.filter(
     (o) =>
       o.status === "pending" ||
@@ -142,178 +114,193 @@ export default function OrdersPage() {
   const refundOrders = orders.filter((o) => o.status === "refunded");
 
   const getDisplayStatus = (status: string) => {
-    switch (status) {
-      case "processing":
-        return "In Progress";
-      case "pending":
-        return "Pending";
-      case "paid":
-        return "Paid";
-      case "completed":
-        return "Completed";
-      case "failed":
-        return "Failed";
-      case "refunded":
-        return "Refunded";
-      default:
-        return status;
-    }
+    const map: Record<string, string> = {
+      pending: "Pending",
+      paid: "Paid",
+      processing: "In Progress",
+      completed: "Completed",
+      failed: "Failed",
+      refunded: "Refunded",
+    };
+    return map[status] || status;
   };
 
-  const renderOrders = (list: Order[], emptyText: string) =>
-    list.length === 0 ? (
-      <div className="text-center py-20 text-gray-500 text-sm">{emptyText}</div>
-    ) : (
-      <div className="space-y-4">
-        {list.map((order) => {
-          const image =
-            typeof order.product?.images?.[0] === "string"
-              ? order.product?.images?.[0]
-              : order.product?.images?.[0]?.image;
+  /* -------------------------------------------------------------------------- */
+  /* 💎 Shimmer skeleton                                                        */
+  /* -------------------------------------------------------------------------- */
+  const ShimmerCard = () => (
+    <div className="animate-pulse bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="flex">
+        <div className="w-24 h-24 bg-gray-200" />
+        <div className="flex-1 p-3 space-y-2">
+          <div className="h-4 bg-gray-200 rounded w-1/3" />
+          <div className="h-3 bg-gray-200 rounded w-2/3" />
+          <div className="h-3 bg-gray-200 rounded w-1/2" />
+          <div className="h-4 bg-gray-200 rounded w-1/4 mt-2" />
+        </div>
+      </div>
+    </div>
+  );
 
-          const vendorData = order.vendor || (order as any).vendor_data;
-          const vendorName =
-            vendorData?.business_name || vendorData?.name || "Unknown Vendor";
-          const vendorLocation =
-            vendorData?.business_address || vendorData?.location || "N/A";
-          const vendorPhone = vendorData?.phone || "";
-          const vendorLogo = vendorData?.logo
-            ? vendorData.logo.startsWith("http")
-              ? vendorData.logo
-              : `${process.env.NEXT_PUBLIC_STORAGE_URL}/${vendorData.logo}`
-            : null;
+  /* -------------------------------------------------------------------------- */
+  /* 🎨 Render order cards                                                      */
+  /* -------------------------------------------------------------------------- */
+  const renderOrders = (list: Order[], emptyText: string) => (
+    <AnimatePresence mode="wait">
+      {isFetching && !loadedFromCache ? (
+        <motion.div
+          key="shimmer"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="space-y-3 mt-4"
+        >
+          {[1, 2, 3, 4].map((i) => (
+            <ShimmerCard key={i} />
+          ))}
+        </motion.div>
+      ) : list.length === 0 ? (
+        <motion.div
+          key="empty"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="text-center py-20 text-gray-400 text-sm"
+        >
+          {emptyText}
+        </motion.div>
+      ) : (
+        <motion.div
+          key="orders"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="space-y-4"
+        >
+          {list.map((order) => {
+            const image =
+              typeof order.product?.images?.[0] === "string"
+                ? order.product?.images?.[0]
+                : order.product?.images?.[0]?.image;
 
-          const displayStatus = getDisplayStatus(order.status);
+            const vendor = order.vendor || (order as any).vendor_data;
+            const vendorName =
+              vendor?.business_name || vendor?.name || "Unknown Vendor";
+            const vendorAddress =
+              vendor?.business_address || vendor?.location || "N/A";
+            const vendorPhone = vendor?.phone || "";
+            const vendorLogo = vendor?.logo
+              ? vendor.logo.startsWith("http")
+                ? vendor.logo
+                : `${storageUrl}/${vendor.logo}`
+              : null;
 
-          const statusColor =
-            order.status === "completed"
-              ? "bg-green-100 text-green-700"
-              : order.status === "paid" || order.status === "processing"
-              ? "bg-blue-100 text-blue-700"
-              : order.status === "failed"
-              ? "bg-red-100 text-red-700"
-              : order.status === "refunded"
-              ? "bg-yellow-100 text-yellow-700"
-              : "bg-gray-100 text-gray-700";
+            const status = getDisplayStatus(order.status);
+            const color =
+              order.status === "completed"
+                ? "bg-green-100 text-green-700"
+                : order.status === "paid" || order.status === "processing"
+                ? "bg-blue-100 text-blue-700"
+                : order.status === "failed"
+                ? "bg-red-100 text-red-700"
+                : order.status === "refunded"
+                ? "bg-yellow-100 text-yellow-700"
+                : "bg-gray-100 text-gray-700";
 
-          return (
-            <div
-              key={order.id}
-              className="flex bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-all duration-200"
-            >
-              {/* 🖼️ Product Image */}
-              <div className="w-24 h-24 bg-gray-50 flex-shrink-0">
-                {image ? (
-                  <img
-                    src={
-                      image.startsWith("http")
-                        ? image
-                        : `${process.env.NEXT_PUBLIC_STORAGE_URL}/${image}`
-                    }
-                    alt={order.product?.name || "Product"}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
-                    No Image
-                  </div>
-                )}
-              </div>
-
-              {/* 📦 Order Info */}
-              <div className="flex-1 p-3 flex flex-col justify-between">
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2">
-                    {vendorLogo ? (
-                      <img
-                        src={vendorLogo}
-                        alt={vendorName}
-                        className="w-7 h-7 rounded-full object-cover border border-gray-200"
-                      />
-                    ) : (
-                      <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-xs font-bold">
-                        {vendorName.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <p className="text-sm font-semibold text-gray-800 leading-tight">
-                      {vendorName}
-                    </p>
-                  </div>
-
-                  <span
-                    className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${statusColor}`}
-                  >
-                    {displayStatus}
-                  </span>
-                </div>
-
-                <div className="text-xs text-gray-600 mt-1 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-teal-600" />
-                  {vendorLocation}
-                </div>
-
-                <div className="mt-2">
-                  <h3 className="font-medium text-gray-900 text-[15px] line-clamp-1">
-                    {order.product?.name || "Product"}
-                  </h3>
-                  <p className="text-sm text-gray-700 mt-1">
-                    Qty: {order.quantity} •{" "}
-                    <span className="font-semibold text-gray-900">
-                      TZS {order.total.toLocaleString()}
-                    </span>
-                  </p>
-                </div>
-
-                <div className="flex justify-between items-center mt-2">
-                  <span className="text-xs text-gray-400">
-                    {new Date(order.created_at).toLocaleDateString()}
-                  </span>
-                  {vendorPhone && (
-                    <a
-                      href={`tel:${vendorPhone}`}
-                      className="flex items-center gap-1 text-sm text-teal-700 font-medium hover:text-teal-800 transition"
-                    >
-                      <Phone className="w-4 h-4" />
-                      {vendorPhone}
-                    </a>
+            return (
+              <motion.div
+                key={order.id}
+                layout
+                className="flex bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-all duration-300"
+              >
+                {/* 🖼️ Product Image */}
+                <div className="w-24 h-24 bg-gray-50 flex-shrink-0">
+                  {image ? (
+                    <img
+                      src={image.startsWith("http") ? image : `${storageUrl}/${image}`}
+                      alt={order.product?.name || "Product"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                      No Image
+                    </div>
                   )}
                 </div>
 
-                {vendorPhone && (
-                  <div className="mt-3">
-                    <a
-                      href={`tel:${vendorPhone}`}
-                      className="flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold py-2 rounded-lg transition w-full"
+                {/* 📦 Order Info */}
+                <div className="flex-1 p-3 flex flex-col justify-between">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      {vendorLogo ? (
+                        <img
+                          src={vendorLogo}
+                          alt={vendorName}
+                          className="w-7 h-7 rounded-full object-cover border border-gray-200"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-xs font-bold">
+                          {vendorName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <p className="text-sm font-semibold text-gray-800 leading-tight">
+                        {vendorName}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${color}`}
                     >
-                      <Phone className="w-4 h-4" />
-                      Call Vendor
-                    </a>
+                      {status}
+                    </span>
                   </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
 
-  if (loading)
-    return (
-      <div className="flex flex-col justify-center items-center h-screen bg-gray-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-black mb-3"></div>
-        <p className="text-gray-500 text-lg">Loading your orders...</p>
-      </div>
-    );
+                  <div className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-teal-600" />
+                    {vendorAddress}
+                  </div>
 
-  if (error)
-    return (
-      <div className="flex justify-center items-center h-screen text-red-600 font-medium">
-        {error}
-      </div>
-    );
+                  <div className="mt-2">
+                    <h3 className="font-medium text-gray-900 text-[15px] line-clamp-1">
+                      {order.product?.name || "Product"}
+                    </h3>
+                    <p className="text-sm text-gray-700 mt-1">
+                      Qty: {order.quantity} •{" "}
+                      <span className="font-semibold text-gray-900">
+                        TZS {order.total.toLocaleString()}
+                      </span>
+                    </p>
+                  </div>
 
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-xs text-gray-400">
+                      {new Date(order.created_at).toLocaleDateString()}
+                    </span>
+                    {vendorPhone && (
+                      <a
+                        href={`tel:${vendorPhone}`}
+                        className="flex items-center gap-1 text-sm text-teal-700 font-medium hover:text-teal-800 transition"
+                      >
+                        <Phone className="w-4 h-4" />
+                        {vendorPhone}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  /* -------------------------------------------------------------------------- */
+  /* ✨ Render page layout                                                      */
+  /* -------------------------------------------------------------------------- */
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
+      {/* Header */}
       <div className="sticky top-0 bg-white shadow-sm border-b border-gray-100 z-30">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-4 py-3">
           <button
@@ -329,6 +316,7 @@ export default function OrdersPage() {
           <div className="w-[30px] sm:w-[60px]" />
         </div>
 
+        {/* Tabs */}
         <div className="flex mx-4 my-3 bg-white rounded-lg overflow-hidden border border-gray-200">
           {["Active Orders", "Order History", "Refunds"].map((t, i) => (
             <button
@@ -346,6 +334,7 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {/* Orders List */}
       <div className="max-w-6xl mx-auto px-4 py-6">
         {selected === 0 &&
           renderOrders(activeOrders, "No active orders found.")}

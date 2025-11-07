@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2, CreditCard, Smartphone } from "lucide-react";
 import Header from "@/app/user/components/Header";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -20,6 +21,7 @@ export default function CheckoutPage() {
   const [cartItems, setCartItems] = useState<any[]>([]);
   const [vendorGroups, setVendorGroups] = useState<any[]>([]);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isLoadingVendors, setIsLoadingVendors] = useState(false);
 
   const [networks] = useState(["M-Pesa", "Airtel Money", "Tigo Pesa", "HaloPesa"]);
   const [selectedNetwork, setSelectedNetwork] = useState("M-Pesa");
@@ -27,7 +29,12 @@ export default function CheckoutPage() {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
   const businessName = "Direct2Kariakoo";
 
-  // ✅ Responsive detection
+  // Cache vendors to prevent refetch
+  const cachedVendors = typeof window !== "undefined" ? sessionStorage.getItem("vendors_cache") : null;
+
+  /* -------------------------------------------------------------------------- */
+  /* 🖥️ Responsive detection                                                    */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const updateLayout = () => setIsDesktop(window.innerWidth >= 1024);
     updateLayout();
@@ -35,7 +42,9 @@ export default function CheckoutPage() {
     return () => window.removeEventListener("resize", updateLayout);
   }, []);
 
-  // ✅ Fetch cart
+  /* -------------------------------------------------------------------------- */
+  /* 🛒 Fetch Cart                                                              */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return router.push("/user/login");
@@ -60,39 +69,50 @@ export default function CheckoutPage() {
     fetchCart();
   }, [apiBaseUrl, router]);
 
-  // ✅ Fetch vendor groups for Manual Payment tab
+  /* -------------------------------------------------------------------------- */
+  /* 💳 Fetch vendor groups for Manual Payment                                  */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (tab !== "manual" || !cartItems.length) return;
 
     const fetchVendors = async () => {
+      // If cached vendors exist, show them immediately
+      if (cachedVendors) {
+        setVendorGroups(JSON.parse(cachedVendors));
+        return;
+      }
+
       try {
+        setIsLoadingVendors(true);
         const itemsPayload = cartItems.map((item) => ({
           product_id: item.product_id || item.product?.id,
           quantity: item.quantity,
         }));
 
         const res = await axios.post(
-          `${apiBaseUrl}/checkout/vendors`, // ✅ correct route
+          `${apiBaseUrl}/checkout/vendors`,
           { items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        if (res.data.vendors) {
-          setVendorGroups(res.data.vendors);
-        } else {
-          setVendorGroups([]);
-        }
+        const data = res.data.vendors || [];
+        setVendorGroups(data);
+        sessionStorage.setItem("vendors_cache", JSON.stringify(data));
       } catch (err: any) {
         console.error("❌ Failed to fetch vendor groups:", err.response?.data || err.message);
         setVendorGroups([]);
+      } finally {
+        setIsLoadingVendors(false);
       }
     };
 
     fetchVendors();
   }, [tab, cartItems, apiBaseUrl]);
 
-  // ✅ Card formatting
+  /* -------------------------------------------------------------------------- */
+  /* 💳 Card Formatting Helpers                                                 */
+  /* -------------------------------------------------------------------------- */
   const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, "").substring(0, 16);
     const groups = value.match(/.{1,4}/g);
@@ -106,7 +126,9 @@ export default function CheckoutPage() {
     setExpiry(value);
   };
 
-  // ✅ Payment logic
+  /* -------------------------------------------------------------------------- */
+  /* 💰 Payment Logic                                                           */
+  /* -------------------------------------------------------------------------- */
   const handlePayment = async (isManualConfirm = false) => {
     const token = localStorage.getItem("token");
     if (!token) return router.push("/user/login");
@@ -120,7 +142,6 @@ export default function CheckoutPage() {
 
       if (!itemsPayload.length) return alert("Cart is empty.");
 
-      // --- MOBILE MONEY ---
       if (tab === "mobile") {
         if (!phone.trim()) return alert("Enter your mobile number");
 
@@ -129,13 +150,9 @@ export default function CheckoutPage() {
           { phone, provider: selectedNetwork, items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-
         alert("Payment initiated! Confirm on your mobile device.");
         clearCartAndGo();
-      }
-
-      // --- CARD PAYMENT ---
-      else if (tab === "card") {
+      } else if (tab === "card") {
         if (!cardNumber || !expiry || !cvv || !name)
           return alert("Please fill all card details");
 
@@ -154,15 +171,12 @@ export default function CheckoutPage() {
 
         alert("Card payment successful!");
         clearCartAndGo();
-      }
-
-      // --- MANUAL PAYMENT ---
-      else if (tab === "manual" && isManualConfirm) {
+      } else if (tab === "manual" && isManualConfirm) {
         await axios.post(
           `${apiBaseUrl}/checkout/confirm-manual`,
           { total, reference: "ManualConfirm", items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
-        );      
+        );
 
         alert("Manual payment confirmed. Orders placed successfully!");
         clearCartAndGo();
@@ -175,6 +189,9 @@ export default function CheckoutPage() {
     }
   };
 
+  /* -------------------------------------------------------------------------- */
+  /* 🧹 Clear cart and redirect                                                 */
+  /* -------------------------------------------------------------------------- */
   const clearCartAndGo = async () => {
     const token = localStorage.getItem("token");
     try {
@@ -184,8 +201,8 @@ export default function CheckoutPage() {
     } catch {}
     localStorage.removeItem("cart_items");
     localStorage.removeItem("checkout_total");
+    sessionStorage.removeItem("vendors_cache");
     window.dispatchEvent(new Event("cart-updated"));
-    window.dispatchEvent(new Event("orders-updated"));
     router.push("/user/orders");
   };
 
@@ -194,7 +211,9 @@ export default function CheckoutPage() {
     else router.push("/user/cart");
   };
 
-  // ✅ Render
+  /* -------------------------------------------------------------------------- */
+  /* ✨ Render                                                                  */
+  /* -------------------------------------------------------------------------- */
   return (
     <div className="bg-gray-50 min-h-screen">
       {isDesktop && <Header onCategorySelect={() => {}} onSubcategorySelect={() => {}} />}
@@ -234,163 +253,116 @@ export default function CheckoutPage() {
 
             {/* Tabs */}
             <div className="flex gap-4 mb-6">
-              {["mobile", "card", "manual"].map((key) => (
+              {[
+                { key: "mobile", label: "Mobile Money", icon: <Smartphone size={16} /> },
+                { key: "card", label: "Card", icon: <CreditCard size={16} /> },
+                { key: "manual", label: "Manual Payment", icon: <CheckCircle size={16} /> },
+              ].map((t) => (
                 <button
-                  key={key}
-                  onClick={() => setTab(key as any)}
-                  className={`flex-1 border rounded-lg py-2 text-sm font-medium transition ${
-                    tab === key
+                  key={t.key}
+                  onClick={() => setTab(t.key as any)}
+                  className={`flex-1 border rounded-lg py-2 text-sm font-medium flex items-center justify-center gap-2 transition ${
+                    tab === t.key
                       ? "border-yellow-400 bg-yellow-50 text-yellow-700"
                       : "border-gray-200 text-gray-700 hover:border-gray-300"
                   }`}
                 >
-                  {key === "mobile" ? "Mobile Money" : key === "card" ? "Card" : "Manual Payment"}
+                  {t.icon} {t.label}
                 </button>
               ))}
             </div>
 
-            {/* --- MOBILE --- */}
-            {tab === "mobile" && (
-              <div className="space-y-4">
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  Select Network
-                </label>
-                <div className="flex gap-2 flex-wrap mb-3">
-                  {networks.map((net) => (
-                    <button
-                      key={net}
-                      onClick={() => setSelectedNetwork(net)}
-                      className={`px-4 py-2 rounded-lg border text-sm transition ${
-                        selectedNetwork === net
-                          ? "bg-yellow-400 border-yellow-400 text-black font-medium"
-                          : "bg-gray-100 border-gray-200 text-gray-700"
-                      }`}
-                    >
-                      {net}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="07XXXXXXXX"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                />
-              </div>
-            )}
-
-            {/* --- CARD --- */}
-            {tab === "card" && (
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  value={cardNumber}
-                  onChange={handleCardNumberChange}
-                  placeholder="1234 5678 9012 3456"
-                  maxLength={19}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400 tracking-widest"
-                />
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={expiry}
-                    onChange={handleExpiryChange}
-                    placeholder="MM/YY"
-                    maxLength={5}
-                    className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400"
-                  />
-                  <input
-                    type="password"
-                    value={cvv}
-                    onChange={(e) => setCvv(e.target.value)}
-                    placeholder="CVV"
-                    maxLength={4}
-                    className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400"
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Card Holder Name"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-yellow-400"
-                />
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={saveCard}
-                    onChange={(e) => setSaveCard(e.target.checked)}
-                    className="mr-2 accent-yellow-400"
-                  />
-                  <span className="text-sm text-gray-700">Save card for future</span>
-                </div>
-              </div>
-            )}
-
             {/* --- MANUAL PAYMENT --- */}
             {tab === "manual" && (
               <div className="space-y-6 text-gray-700">
-                {vendorGroups.length === 0 && (
-                  <p className="text-sm text-gray-500">Fetching vendor details...</p>
-                )}
-
-                {vendorGroups.map((group) => (
-                  <div
-                    key={group.vendor.id}
-                    className="border border-gray-200 rounded-xl p-4 bg-gray-50"
-                  >
-                    <h4 className="font-semibold text-gray-800 mb-2">
-                      Vendor: {group.vendor.name}
-                    </h4>
-
-                    <ul className="text-sm text-gray-700 space-y-1 mb-3">
-                      {group.items.map((it: any) => (
-                        <li key={it.id} className="flex justify-between">
-                          <span>
-                            {it.name} × {it.quantity}
-                          </span>
-                          <span className="text-yellow-600">
-                            TZS {(it.price * it.quantity).toLocaleString()}
-                          </span>
-                        </li>
+                <AnimatePresence>
+                  {isLoadingVendors ? (
+                    <motion.div
+                      key="loading"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="space-y-4"
+                    >
+                      {[1, 2, 3].map((i) => (
+                        <div
+                          key={i}
+                          className="animate-pulse bg-gray-100 border border-gray-200 rounded-xl p-4 space-y-3"
+                        >
+                          <div className="h-4 w-1/3 bg-gray-200 rounded" />
+                          <div className="h-3 w-2/3 bg-gray-200 rounded" />
+                          <div className="h-3 w-1/2 bg-gray-200 rounded" />
+                          <div className="h-3 w-1/4 bg-gray-200 rounded" />
+                        </div>
                       ))}
-                    </ul>
+                    </motion.div>
+                  ) : (
+                    vendorGroups.map((group) => (
+                      <motion.div
+                        key={group.vendor.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="border border-gray-200 rounded-xl p-5 bg-gradient-to-br from-white to-gray-50 shadow-sm"
+                      >
+                        <div className="flex justify-between items-center mb-2">
+                          <h4 className="font-semibold text-gray-900 text-[15px]">
+                            {group.vendor.name}
+                          </h4>
+                          <span className="text-xs text-gray-500">Vendor ID: {group.vendor.id}</span>
+                        </div>
 
-                    <div className="text-sm font-medium text-gray-800 mb-2">
-                      Total:{" "}
-                      <span className="text-yellow-600">
-                        TZS {group.total.toLocaleString()}
-                      </span>
-                    </div>
+                        <ul className="text-sm text-gray-700 space-y-1 mb-3 border-b border-gray-100 pb-2">
+                          {group.items.map((it: any) => (
+                            <li key={it.id} className="flex justify-between">
+                              <span>
+                                {it.name} × {it.quantity}
+                              </span>
+                              <span className="text-yellow-600 font-medium">
+                                TZS {(it.price * it.quantity).toLocaleString()}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
 
-                    <p className="text-xs text-gray-500 mb-1">Payment Options:</p>
-                    <ul className="text-xs text-gray-700">
-                      {group.vendor.payment_options.length ? (
-                        group.vendor.payment_options.map((opt: any) => (
-                          <li key={opt.id}>
-                            {opt.method}: <b>{opt.account}</b>
-                          </li>
-                        ))
-                      ) : (
-                        <li className="text-gray-400">No payment methods added</li>
-                      )}
-                    </ul>
-                  </div>
-                ))}
+                        <div className="text-sm font-semibold text-gray-800 flex justify-between items-center mb-2">
+                          <span>Total</span>
+                          <span className="text-yellow-600 font-bold text-base">
+                            TZS {group.total.toLocaleString()}
+                          </span>
+                        </div>
 
-                <button
-                  onClick={() => handlePayment(true)}
-                  disabled={loading}
-                  className={`w-full mt-2 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition ${
-                    loading
-                      ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                      : "bg-yellow-400 hover:bg-yellow-300 text-black"
-                  }`}
-                >
-                  <CheckCircle size={18} />
-                  {loading ? "Processing..." : "I Have Paid – Place Order"}
-                </button>
+                        <div className="text-xs text-gray-500 mb-1">Payment Options</div>
+                        <ul className="text-sm text-gray-700 space-y-1">
+                          {group.vendor.payment_options.length ? (
+                            group.vendor.payment_options.map((opt: any) => (
+                              <li key={opt.id} className="flex justify-between">
+                                <span>{opt.method}</span>
+                                <span className="font-medium">{opt.account}</span>
+                              </li>
+                            ))
+                          ) : (
+                            <li className="text-gray-400 text-xs">No payment methods added</li>
+                          )}
+                        </ul>
+                      </motion.div>
+                    ))
+                  )}
+                </AnimatePresence>
+
+                {!isLoadingVendors && vendorGroups.length > 0 && (
+                  <button
+                    onClick={() => handlePayment(true)}
+                    disabled={loading}
+                    className={`w-full mt-2 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition ${
+                      loading
+                        ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+                        : "bg-yellow-400 hover:bg-yellow-300 text-black"
+                    }`}
+                  >
+                    {loading ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+                    {loading ? "Processing..." : "I Have Paid – Place Order"}
+                  </button>
+                )}
               </div>
             )}
           </section>
