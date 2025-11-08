@@ -7,8 +7,68 @@ import Image from "next/image";
 import { Loader2, Upload, Trash2, X } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Inner Component (wrapped later in Suspense for export safety) */
+/* 🌐 Simple in-memory + session cache */
+const cacheStore: Record<string, any> = {};
+const cacheTTL = 5 * 60 * 1000; // 5 minutes
+function getCached(key: string) {
+  const mem = cacheStore[key];
+  const ses = sessionStorage.getItem(key);
+  if (mem && Date.now() - mem.t < cacheTTL) return mem.v;
+  if (ses) {
+    const obj = JSON.parse(ses);
+    if (Date.now() - obj.t < cacheTTL) return obj.v;
+  }
+  return null;
+}
+function setCached(key: string, value: any) {
+  cacheStore[key] = { v: value, t: Date.now() };
+  sessionStorage.setItem(key, JSON.stringify({ v: value, t: Date.now() }));
+}
+
 /* -------------------------------------------------------------------------- */
+/* 🌈 Shimmer Loader Components */
+const ShimmerBox = ({ className }: { className?: string }) => (
+  <div className={`bg-gray-200/60 animate-pulse rounded-md ${className}`} />
+);
+
+const ShimmerForm = () => (
+  <div className="max-w-3xl mx-auto bg-white mt-6 rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+    <div className="space-y-3">
+      <ShimmerBox className="w-32 h-5" />
+      <div className="flex flex-wrap gap-3">
+        {Array(5)
+          .fill(0)
+          .map((_, i) => (
+            <ShimmerBox key={i} className="w-24 h-24 rounded-lg" />
+          ))}
+      </div>
+    </div>
+
+    <div className="space-y-3">
+      <ShimmerBox className="w-40 h-5" />
+      <ShimmerBox className="w-full h-10" />
+      <div className="grid sm:grid-cols-2 gap-4">
+        <ShimmerBox className="h-10" />
+        <ShimmerBox className="h-10" />
+      </div>
+      <ShimmerBox className="h-10" />
+      <ShimmerBox className="h-24" />
+    </div>
+
+    <div className="space-y-3">
+      <ShimmerBox className="w-52 h-5" />
+      <div className="grid sm:grid-cols-2 gap-4">
+        <ShimmerBox className="h-10" />
+        <ShimmerBox className="h-10" />
+      </div>
+    </div>
+
+    <ShimmerBox className="w-full h-12" />
+  </div>
+);
+
+/* -------------------------------------------------------------------------- */
+/* 🧩 Inner Component */
 function EditProductInner() {
   const searchParams = useSearchParams();
   const productId = searchParams.get("id");
@@ -37,8 +97,7 @@ function EditProductInner() {
   });
 
   /* -------------------------------------------------------------------------- */
-  /* 🟢 FETCH PRODUCT + CATEGORIES + ATTRIBUTES */
-  /* -------------------------------------------------------------------------- */
+  /* 🔄 Fetch product + categories */
   useEffect(() => {
     if (!productId) {
       setLoading(false);
@@ -49,44 +108,25 @@ function EditProductInner() {
       try {
         setLoading(true);
 
-        // 1️⃣ Product details
-        const res = await api.get(`/products/${productId}`);
-        const p = res.data?.product || res.data;
-
-        setForm({
-          name: p.name || "",
-          new_price: p.new_price?.toString() || "",
-          old_price: p.old_price?.toString() || "",
-          description: p.description || "",
-          stock: p.stock?.toString() || "",
-          category_id: p.category?.id?.toString() || "",
-          subcategory_id: p.subcategory?.id?.toString() || "",
-        });
-
-        setExistingImages(p.images || []);
-
-        if (p.attribute_values) {
-          const attrs: { [key: string]: string } = {};
-          p.attribute_values.forEach((av: any) => {
-            attrs[av.attribute.id] = av.value;
-          });
-          setAttributeValues(attrs);
+        const cached = getCached(`product-${productId}`);
+        if (cached) {
+          populateProduct(cached);
+          setLoading(false);
+          return;
         }
 
-        // 2️⃣ Fetch categories
-        const catRes = await api.get("/categories");
-        setCategories(catRes.data || []);
+        const [pRes, cRes] = await Promise.all([
+          api.get(`/products/${productId}`),
+          api.get("/categories"),
+        ]);
 
-        // 3️⃣ Subcategories + attributes
-        if (p.category?.id) {
-          const subRes = await api.get(`/categories/${p.category.id}/subcategories`);
-          setSubcategories(subRes.data || []);
-
-          const attrRes = await api.get(`/categories/${p.category.id}`);
-          setAttributes(attrRes.data?.attributes || []);
-        }
+        const product = pRes.data?.product || pRes.data;
+        const cats = cRes.data || [];
+        setCategories(cats);
+        populateProduct(product);
+        setCached(`product-${productId}`, product);
       } catch (err) {
-        console.error("❌ Failed to load product:", err);
+        console.error("❌ Product load error:", err);
       } finally {
         setLoading(false);
       }
@@ -95,29 +135,60 @@ function EditProductInner() {
     fetchData();
   }, [productId]);
 
-  /* -------------------------------------------------------------------------- */
-  /* 🟢 HANDLE CATEGORY CHANGE */
+  const populateProduct = async (p: any) => {
+    setForm({
+      name: p.name || "",
+      new_price: p.new_price?.toString() || "",
+      old_price: p.old_price?.toString() || "",
+      description: p.description || "",
+      stock: p.stock?.toString() || "",
+      category_id: p.category?.id?.toString() || "",
+      subcategory_id: p.subcategory?.id?.toString() || "",
+    });
+
+    setExistingImages(
+      Array.isArray(p.images)
+        ? p.images.map((img: any) =>
+            typeof img === "string"
+              ? { image: img }
+              : { image: img.image || img.image_url || img.url || img.path }
+          )
+        : []
+    );
+
+    if (p.attribute_values) {
+      const attrs: { [key: string]: string } = {};
+      p.attribute_values.forEach((av: any) => {
+        attrs[av.attribute.id] = av.value;
+      });
+      setAttributeValues(attrs);
+    }
+
+    if (p.category?.id) {
+      const [subRes, attrRes] = await Promise.all([
+        api.get(`/categories/${p.category.id}/subcategories`),
+        api.get(`/categories/${p.category.id}`),
+      ]);
+      setSubcategories(subRes.data || []);
+      setAttributes(attrRes.data?.attributes || []);
+    }
+  };
+
   /* -------------------------------------------------------------------------- */
   async function handleCategoryChange(categoryId: string) {
     try {
-      const subRes = await api.get(`/categories/${categoryId}/subcategories`);
+      const [subRes, attrRes] = await Promise.all([
+        api.get(`/categories/${categoryId}/subcategories`),
+        api.get(`/categories/${categoryId}`),
+      ]);
       setSubcategories(subRes.data || []);
-
-      const attrRes = await api.get(`/categories/${categoryId}`);
       setAttributes(attrRes.data?.attributes || []);
-
-      setForm((prev) => ({
-        ...prev,
-        category_id: categoryId,
-        subcategory_id: "",
-      }));
+      setForm((prev) => ({ ...prev, category_id: categoryId, subcategory_id: "" }));
     } catch (err) {
       console.error("Failed to fetch subcategories:", err);
     }
   }
 
-  /* -------------------------------------------------------------------------- */
-  /* 🟢 IMAGE HANDLERS */
   /* -------------------------------------------------------------------------- */
   const handleNewImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
@@ -127,25 +198,21 @@ function EditProductInner() {
       setPreviewUrls((prev) => [...prev, ...previews]);
     }
   };
-
   const removeExistingImage = (i: number) => {
     setExistingImages((prev) => prev.filter((_, idx) => idx !== i));
   };
-
   const removeNewImage = (i: number) => {
     setNewImages((prev) => prev.filter((_, idx) => idx !== i));
     setPreviewUrls((prev) => prev.filter((_, idx) => idx !== i));
   };
-
   const normalizeImageUrl = (path: string) => {
     if (!path) return "/placeholder.png";
     if (path.startsWith("http")) return path;
-    const cleanPath = path.replace(/^storage\//, "");
-    return `${process.env.NEXT_PUBLIC_STORAGE_URL}/storage/${cleanPath}`;
+    const base = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "";
+    const clean = path.replace(/^\/?storage\//, "");
+    return `${base}/storage/${clean}`;
   };
 
-  /* -------------------------------------------------------------------------- */
-  /* 🟢 SUBMIT CHANGES */
   /* -------------------------------------------------------------------------- */
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -160,10 +227,8 @@ function EditProductInner() {
       Object.entries(attributeValues).forEach(([k, v]) =>
         formData.append(`attributes[${k}]`, v)
       );
-
       if (existingImages.length === 0 && newImages.length === 0)
         formData.append("remove_images", "true");
-
       newImages.forEach((img) => formData.append("images[]", img));
 
       const res = await api.post(`/products/${productId}`, formData, {
@@ -171,8 +236,8 @@ function EditProductInner() {
       });
 
       setMessage({ type: "success", text: res.data?.message || "✅ Product updated successfully!" });
-      setTimeout(() => router.push(`/vendor/products?id=${productId}`), 1500);
-    } catch (err: any) {
+      setCached(`product-${productId}`, null);
+      setTimeout(() => router.push(`/vendor/products?id=${productId}`), 1500);    } catch (err: any) {
       console.error("Update error:", err);
       setMessage({
         type: "error",
@@ -183,8 +248,6 @@ function EditProductInner() {
     }
   }
 
-  /* -------------------------------------------------------------------------- */
-  /* 🟢 DELETE PRODUCT */
   /* -------------------------------------------------------------------------- */
   async function handleDelete() {
     if (!confirm("Are you sure you want to delete this product?")) return;
@@ -203,18 +266,22 @@ function EditProductInner() {
   }
 
   /* -------------------------------------------------------------------------- */
-  /* 🟡 RENDER */
-  /* -------------------------------------------------------------------------- */
   if (loading)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-50">
-        <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
-      </div>
+      <main className="min-h-screen bg-gray-50 pb-24">
+        <div className="sticky top-0 bg-white px-5 py-4 shadow-sm flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-5 h-5 text-teal-600 animate-spin" />
+            <span className="font-semibold text-gray-700">Loading Product...</span>
+          </div>
+        </div>
+        <ShimmerForm />
+      </main>
     );
 
+  /* -------------------------------------------------------------------------- */
   return (
     <main className="min-h-screen bg-gray-50 pb-24">
-      {/* HEADER */}
       <header className="bg-white shadow-sm px-5 py-4 flex justify-between items-center sticky top-0 z-30">
         <h1 className="font-semibold text-gray-800 text-lg">Edit Product</h1>
         <button
@@ -234,7 +301,6 @@ function EditProductInner() {
         </button>
       </header>
 
-      {/* FORM */}
       <form
         onSubmit={handleSubmit}
         className="max-w-3xl mx-auto bg-white mt-6 rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6"
@@ -296,7 +362,7 @@ function EditProductInner() {
               </div>
             ))}
 
-            <label className="w-24 h-24 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 hover:border-teal-500 cursor-pointer bg-gray-50">
+            <label className="w-24 h-24 flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 hover:border-teal-500 cursor-pointer bg-gray-50 transition">
               <Upload className="w-5 h-5 text-gray-500" />
               <span className="text-xs mt-1 text-gray-500">Upload</span>
               <input
@@ -419,7 +485,6 @@ function EditProductInner() {
           </section>
         )}
 
-        {/* SAVE BUTTON */}
         <button
           type="submit"
           disabled={submitting}
@@ -440,11 +505,10 @@ function EditProductInner() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Wrap in Suspense for next export safety */
-/* -------------------------------------------------------------------------- */
+/* ✅ Export with Suspense wrapper */
 export default function EditProductPage() {
   return (
-    <Suspense fallback={<div className="flex justify-center p-10 text-gray-500">Loading...</div>}>
+    <Suspense fallback={<ShimmerForm />}>
       <EditProductInner />
     </Suspense>
   );

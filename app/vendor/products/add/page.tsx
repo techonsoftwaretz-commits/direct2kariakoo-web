@@ -6,6 +6,30 @@ import { api } from "@/lib/api";
 import Image from "next/image";
 import { Loader2, Upload, X } from "lucide-react";
 
+/* -------------------------------------------------------------------------- */
+/* 🔁 In-memory session cache to reduce API hits                              */
+/* -------------------------------------------------------------------------- */
+const sessionCache: {
+  categories?: any[];
+  subcategories?: Record<string, any[]>;
+  attributes?: Record<string, any[]>;
+  timestamp?: number;
+} = {};
+
+/* -------------------------------------------------------------------------- */
+/* 🧱 Shimmer placeholder component                                           */
+/* -------------------------------------------------------------------------- */
+function ShimmerBox({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 animate-pulse rounded-md ${className}`}
+    />
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* 🌟 AddProductPage                                                         */
+/* -------------------------------------------------------------------------- */
 export default function AddProductPage() {
   const router = useRouter();
 
@@ -29,20 +53,37 @@ export default function AddProductPage() {
     subcategory_id: "",
   });
 
-  // ---------------- FETCH CATEGORIES ----------------
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Fetch Categories (with session caching)                                 */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     async function fetchCategories() {
       try {
         setLoading(true);
+        const now = Date.now();
+
+        // use cache if within 5 minutes
+        if (sessionCache.categories && sessionCache.timestamp && now - sessionCache.timestamp < 5 * 60 * 1000) {
+          setCategories(sessionCache.categories);
+          setLoading(false);
+          const first = sessionCache.categories[0];
+          if (first) {
+            setForm((prev) => ({ ...prev, category_id: first.id.toString() }));
+            await fetchSubcategories(first.id.toString(), true);
+          }
+          return;
+        }
+
         const res = await api.get("/categories");
         const result = res.data || [];
+        sessionCache.categories = result;
+        sessionCache.timestamp = now;
         setCategories(result);
 
-        // Default select first category if available
         if (result.length > 0) {
           const first = result[0];
           setForm((prev) => ({ ...prev, category_id: first.id.toString() }));
-          await fetchSubcategories(first.id.toString());
+          await fetchSubcategories(first.id.toString(), true);
         }
       } catch (err) {
         console.error("Error fetching categories:", err);
@@ -53,28 +94,48 @@ export default function AddProductPage() {
     fetchCategories();
   }, []);
 
-  // ---------------- FETCH SUBCATEGORIES + ATTRIBUTES ----------------
-  async function fetchSubcategories(categoryId: string) {
+  /* -------------------------------------------------------------------------- */
+  /* 🔄 Fetch Subcategories & Attributes (cached per category)                  */
+  /* -------------------------------------------------------------------------- */
+  async function fetchSubcategories(categoryId: string, silent = false) {
     try {
-      const subRes = await api.get(`/categories/${categoryId}/subcategories`);
+      if (!silent) setLoading(true);
+
+      // Cache check
+      if (sessionCache.subcategories?.[categoryId] && sessionCache.attributes?.[categoryId]) {
+        setSubcategories(sessionCache.subcategories[categoryId]);
+        setAttributes(sessionCache.attributes[categoryId]);
+        return;
+      }
+
+      const [subRes, catRes] = await Promise.all([
+        api.get(`/categories/${categoryId}/subcategories`),
+        api.get(`/categories/${categoryId}`),
+      ]);
+
       const subData = subRes.data || [];
+      const attrData = catRes.data?.attributes || [];
+
+      sessionCache.subcategories = { ...(sessionCache.subcategories || {}), [categoryId]: subData };
+      sessionCache.attributes = { ...(sessionCache.attributes || {}), [categoryId]: attrData };
+
       setSubcategories(subData);
+      setAttributes(attrData);
 
       if (subData.length > 0) {
         setForm((prev) => ({ ...prev, subcategory_id: subData[0].id.toString() }));
       }
-
-      // ✅ Fetch category + global attributes
-      const catRes = await api.get(`/categories/${categoryId}`);
-      const attrs = catRes.data?.attributes || [];
-      setAttributes(attrs);
     } catch (err) {
       console.error("Error fetching subcategories or attributes:", err);
       setAttributes([]);
+    } finally {
+      if (!silent) setLoading(false);
     }
   }
 
-  // ---------------- HANDLE CHANGE ----------------
+  /* -------------------------------------------------------------------------- */
+  /* 🧩 Handlers                                                               */
+  /* -------------------------------------------------------------------------- */
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) {
@@ -86,7 +147,6 @@ export default function AddProductPage() {
     setAttributeValues((prev) => ({ ...prev, [attrId]: value }));
   }
 
-  // ---------------- IMAGE HANDLING ----------------
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (files.length) {
@@ -101,7 +161,9 @@ export default function AddProductPage() {
     setPreviewUrls((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  // ---------------- SUBMIT PRODUCT ----------------
+  /* -------------------------------------------------------------------------- */
+  /* 🚀 Submit Product                                                         */
+  /* -------------------------------------------------------------------------- */
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -132,16 +194,30 @@ export default function AddProductPage() {
     }
   }
 
-  // ---------------- UI ----------------
+  /* -------------------------------------------------------------------------- */
+  /* 💠 Shimmer Skeleton (while loading)                                       */
+  /* -------------------------------------------------------------------------- */
   if (loading)
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-50">
-        <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
-      </div>
+      <main className="min-h-screen bg-gray-50 flex justify-center items-start pt-10 px-5">
+        <div className="w-full max-w-2xl space-y-5">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+              <ShimmerBox className="h-5 w-1/3" />
+              {[...Array(3)].map((_, j) => (
+                <ShimmerBox key={j} className="h-10 w-full" />
+              ))}
+            </div>
+          ))}
+        </div>
+      </main>
     );
 
+  /* -------------------------------------------------------------------------- */
+  /* 🧩 Actual Form UI                                                         */
+  /* -------------------------------------------------------------------------- */
   return (
-    <main className="min-h-screen bg-gray-50 pb-24">
+    <main className="min-h-screen bg-gray-50 pb-24 transition-all">
       {/* HEADER */}
       <header className="bg-white shadow-sm px-5 py-4 flex justify-between items-center sticky top-0 z-30">
         <h1 className="font-semibold text-gray-800 text-lg">Add Product</h1>
@@ -153,7 +229,7 @@ export default function AddProductPage() {
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto mt-6 p-4 sm:p-0 space-y-6">
         {message && (
           <div
-            className={`p-3 text-sm rounded-lg ${
+            className={`p-3 text-sm rounded-lg transition-all duration-300 ${
               message.type === "success"
                 ? "bg-green-50 text-green-700 border border-green-200"
                 : "bg-red-50 text-red-600 border border-red-200"

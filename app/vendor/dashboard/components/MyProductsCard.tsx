@@ -1,9 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
-import { RefreshCw, ShoppingCart, Star } from "lucide-react";
-import { useState } from "react";
+import { RefreshCw, ShoppingCart, Star, Heart } from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface MyProductsCardProps {
   products: any[];
@@ -17,19 +16,48 @@ export default function MyProductsCard({
   onRefresh,
 }: MyProductsCardProps) {
   const [refreshing, setRefreshing] = useState(false);
+  const [cachedProducts, setCachedProducts] = useState<any[]>([]);
+  const [likedProducts, setLikedProducts] = useState<number[]>([]);
 
+  const CACHE_KEY_PRODUCTS = "d2k_vendor_products";
+  const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12h cache
+
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Load Cached Products                                                    */
+  /* -------------------------------------------------------------------------- */
+  useEffect(() => {
+    try {
+      const now = Date.now();
+      const cached = localStorage.getItem(CACHE_KEY_PRODUCTS);
+      const cachedTime = localStorage.getItem(`${CACHE_KEY_PRODUCTS}_time`);
+
+      if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
+        setCachedProducts(JSON.parse(cached));
+      } else {
+        localStorage.removeItem(CACHE_KEY_PRODUCTS);
+        localStorage.removeItem(`${CACHE_KEY_PRODUCTS}_time`);
+      }
+    } catch (err) {
+      console.warn("Cache read failed:", err);
+    }
+  }, []);
+
+  /* -------------------------------------------------------------------------- */
+  /* 🔁 Handle Refresh Button                                                   */
+  /* -------------------------------------------------------------------------- */
   const handleRefresh = async () => {
     if (!onRefresh) return;
     setRefreshing(true);
     await onRefresh();
-    setTimeout(() => setRefreshing(false), 600);
+    setTimeout(() => setRefreshing(false), 800);
   };
 
-  // ✅ Normalize image URL (Laravel-friendly)
+  /* -------------------------------------------------------------------------- */
+  /* 🖼️ Normalize Image URL                                                   */
+  /* -------------------------------------------------------------------------- */
   const getImageUrl = (img?: string): string => {
     if (!img) return "/placeholder.png";
     const base = (process.env.NEXT_PUBLIC_STORAGE_URL || "").replace(/\/$/, "");
-
     if (img.startsWith("http")) return img;
     if (/^(products|vendor_avatars)\//.test(img)) return `${base}/storage/${img}`;
     if (img.startsWith("/storage") || img.startsWith("storage"))
@@ -37,7 +65,28 @@ export default function MyProductsCard({
     return `${base}/storage/${img}`;
   };
 
-  // ==================== NO LOADING PLACEHOLDER ====================
+  /* -------------------------------------------------------------------------- */
+  /* ✨ Shimmer Loader                                                          */
+  /* -------------------------------------------------------------------------- */
+  const ShimmerGrid = () => (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4 px-5 py-3">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={i}
+          className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm animate-pulse"
+        >
+          <div className="w-full h-[150px] bg-gray-200 rounded-md mb-3" />
+          <div className="w-3/4 h-4 bg-gray-200 rounded mb-2" />
+          <div className="w-1/2 h-3 bg-gray-100 rounded mb-3" />
+          <div className="w-2/3 h-2 bg-gray-200 rounded" />
+        </div>
+      ))}
+    </div>
+  );
+
+  /* -------------------------------------------------------------------------- */
+  /* 🚫 Empty State                                                             */
+  /* -------------------------------------------------------------------------- */
   if (!loading && (!products || products.length === 0)) {
     return (
       <div className="flex justify-center py-12 text-gray-400">
@@ -46,208 +95,169 @@ export default function MyProductsCard({
     );
   }
 
-  // ==================== MAIN ====================
+  /* -------------------------------------------------------------------------- */
+  /* 🧩 Render Product Grid                                                     */
+  /* -------------------------------------------------------------------------- */
+  const data = products && products.length > 0 ? products : cachedProducts;
+
   return (
     <div className="bg-[#F9FAFB] py-5 animate-fadeIn">
       {/* HEADER */}
       <div className="flex justify-between items-center px-5 mb-5">
-        <h2 className="text-[18px] font-extrabold text-[#272B37] underline">
+        <h2 className="text-[18px] font-extrabold text-[#272B37]">
           My Products
         </h2>
+
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-[#E7ECF0] rounded-full text-[#3E4862] font-semibold text-[13px] hover:bg-[#d9e1e7] transition"
+          className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full text-gray-700 font-semibold text-[13px] hover:bg-gray-200 transition"
         >
           <RefreshCw
             className={`w-4 h-4 ${
               refreshing ? "animate-spin text-teal-600" : ""
             }`}
           />
-          Refresh
+          {refreshing ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
-      {/* PRODUCTS GRID */}
-      <div
-        className="
-          grid
-          grid-cols-2
-          sm:grid-cols-3
-          md:grid-cols-4
-          lg:grid-cols-6
-          xl:grid-cols-7
-          2xl:grid-cols-8
-          gap-4
-          px-5
-        "
-      >
-        {(products || []).map((product) => {
-          const rawImg =
-            product?.images?.[0]?.image ||
-            product?.product_images?.[0]?.image ||
-            product?.image ||
-            null;
+      {/* GRID */}
+      {loading ? (
+        <ShimmerGrid />
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4 px-5">
+          {data.map((product) => {
+            const rawImg =
+              product?.images?.[0]?.image ||
+              product?.product_images?.[0]?.image ||
+              product?.image ||
+              null;
+            const image = getImageUrl(rawImg);
+            const newPrice = Number(product?.new_price || 0);
+            const oldPrice = Number(product?.old_price || 0);
+            const discount =
+              oldPrice > newPrice
+                ? Math.round(((oldPrice - newPrice) / oldPrice) * 100)
+                : 0;
+            const rating = parseFloat(product?.average_rating || 0).toFixed(1);
+            const reviewCount = product?.review_count || 0;
+            const liked = likedProducts.includes(product.id);
 
-          const image = getImageUrl(rawImg);
-          const attrValues =
-            product?.attribute_values
-              ?.map((a: any) => a?.value)
-              ?.filter((v: any) => v) || [];
-          const subcategory = product?.subcategory?.name || "";
-          const newPrice = Number(product?.new_price || 0);
-          const oldPrice = Number(product?.old_price || 0);
-          const discount =
-            oldPrice > newPrice
-              ? Math.round(((oldPrice - newPrice) / oldPrice) * 100)
-              : 0;
-          const rating = parseFloat(product?.average_rating || 0).toFixed(1);
-          const reviewCount = product?.review_count || 0;
-          const soldRecently = product?.sold_recently || 0;
-
-          return (
-            <Link
-              key={product.id}
-              href={`/vendor/products?id=${product.id}`}
-              className="bg-white rounded-[8px] border border-[#E3E7ED] shadow-sm hover:shadow-md hover:scale-[1.02] transition-all duration-200"
-            >
-              {/* BADGE */}
-              <div className="flex justify-between items-center px-3 pt-3">
-                <div className="bg-gray-100 text-gray-800 text-[10px] font-semibold px-3 py-1 rounded-full">
+            return (
+              <div
+                key={product.id}
+                className="relative bg-white border border-gray-200 rounded-xl hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col"
+              >
+                {/* 🔹 Best Seller Tag */}
+                <div className="absolute top-2 left-2 bg-gray-800 text-white text-xs font-semibold px-2 py-0.5 rounded-md z-10 shadow-sm">
                   Best Seller
                 </div>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="w-4 h-4 text-blue-500"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path d="M10 0l2.39 7.36h7.75L13.45 11.9l2.39 7.36L10 14.72l-5.84 4.54L6.55 11.9 0 7.36h7.75L10 0z" />
-                </svg>
-              </div>
 
-              {/* IMAGE */}
-              <div className="relative w-full h-[140px] mt-2 bg-gray-100 rounded-t-[5px] overflow-hidden">
-                <Image
-                  src={image}
-                  alt={product.name || "Product"}
-                  fill
-                  unoptimized
-                  loader={({ src }) => src}
-                  className="object-cover transition-transform duration-300 group-hover:scale-110"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.src = "/placeholder.png";
+                {/* ❤️ Wishlist */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLikedProducts((prev) =>
+                      liked
+                        ? prev.filter((id) => id !== product.id)
+                        : [...prev, product.id]
+                    );
                   }}
-                />
-              </div>
+                  className="absolute top-2 right-2 bg-white rounded-full shadow-md p-1.5 z-10 hover:scale-105 transition"
+                >
+                  <Heart
+                    size={16}
+                    className={liked ? "text-red-500 fill-red-500" : "text-gray-400"}
+                  />
+                </button>
 
-              {/* CONTENT */}
-              <div className="p-3">
-                {/* ATTRIBUTES */}
-                {attrValues.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {attrValues.slice(0, 2).map((v: string, i: number) => (
-                      <span
-                        key={i}
-                        className="bg-[#F6F8FA] text-[#54576D] text-[10.7px] px-2 py-1 rounded-md font-medium"
-                      >
-                        {v}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {/* 🖼️ Product Image */}
+                <div className="relative w-full h-40 bg-gray-50">
+                  <Image
+                    src={image}
+                    alt={product.name || "Product"}
+                    fill
+                    unoptimized
+                    loader={({ src }) => src}
+                    className="object-contain p-4 transition-transform duration-300 group-hover:scale-105"
+                    sizes="200px"
+                  />
+                </div>
 
-                {/* NAME */}
-                <h3 className="text-[#232742] text-[13.5px] font-medium line-clamp-2 mb-1">
-                  {product.name}
-                </h3>
+                {/* CONTENT */}
+                <div className="px-3 py-2 flex flex-col flex-grow">
+                  {/* Product Name */}
+                  <h3 className="font-medium text-sm text-gray-800 line-clamp-2 leading-snug min-h-[36px]">
+                    {product.name}
+                  </h3>
 
-                {/* SUBCATEGORY */}
-                {subcategory && (
-                  <p className="text-[#949AA8] text-[13px] font-bold mb-1">
-                    {subcategory}
-                  </p>
-                )}
-
-                {/* RATING */}
-                <div className="flex items-center mb-2">
-                  {Array.from({ length: 5 }).map((_, i) => {
-                    const filled = i < Math.floor(Number(rating));
-                    const half = i < Number(rating) && Number(rating) - i >= 0.5;
-                    return (
+                  {/* ⭐ Rating */}
+                  <div className="flex items-center gap-1 mt-1">
+                    {[...Array(5)].map((_, i) => (
                       <Star
                         key={i}
-                        size={14}
-                        className={`${
-                          filled
+                        size={13}
+                        className={
+                          i < Math.floor(Number(rating))
                             ? "text-yellow-400 fill-yellow-400"
-                            : half
-                            ? "text-yellow-400 fill-yellow-400 opacity-70"
-                            : "text-yellow-200"
-                        }`}
+                            : "text-gray-300"
+                        }
                       />
-                    );
-                  })}
-                  <span className="ml-1 text-[12px] font-bold text-[#232742]">
-                    {Number(reviewCount) > 0 ? rating : ""}
-                  </span>
-                  <span className="ml-1 text-[11.5px] text-gray-500">
-                    ({reviewCount})
-                  </span>
-                </div>
-
-                {/* PRICES */}
-                <div className="mb-1">
-                  <div className="flex items-end">
-                    <span className="text-[#232742] font-bold text-[13.5px] mr-1">
-                      TZS
-                    </span>
-                    <span className="font-bold text-[16.7px] text-black">
-                      {newPrice.toLocaleString()}
-                    </span>
+                    ))}
+                    {reviewCount > 0 && (
+                      <span className="text-xs text-gray-500 ml-1">
+                        ({reviewCount.toLocaleString()})
+                      </span>
+                    )}
                   </div>
 
-                  {(oldPrice > 0 || discount > 0) && (
-                    <div className="flex items-center mt-1">
-                      {oldPrice > 0 && (
-                        <span className="text-[13px] text-gray-400 line-through mr-2">
-                          {oldPrice.toLocaleString()}
-                        </span>
-                      )}
-                      {discount > 0 && (
-                        <span className="bg-[#E5F8F2] text-teal-600 text-[11.5px] font-bold px-2 py-[2px] rounded-full">
-                          -{discount}%
-                        </span>
-                      )}
+                  {/* 💰 Prices */}
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-semibold text-[15px] text-gray-900">
+                      TZS {newPrice.toLocaleString("en-TZ")}
+                    </span>
+                    {oldPrice > 0 && (
+                      <span className="line-through text-xs text-gray-400">
+                        TZS {oldPrice.toLocaleString()}
+                      </span>
+                    )}
+                    {discount > 0 && (
+                      <span className="text-green-600 text-xs font-medium">
+                        {discount}% OFF
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 🔹 Stats Row */}
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="text-[10px] text-gray-500 flex items-center gap-1">
+                      <ShoppingCart size={12} className="text-gray-400" />
+                      <span>{product?.sold_recently || 0}+ sold</span>
                     </div>
-                  )}
-                </div>
-
-                {/* SOLD RECENTLY */}
-                {soldRecently > 0 && (
-                  <div className="flex items-center text-[#6C8DBD] text-[11.5px] font-medium mt-1">
-                    <ShoppingCart className="w-3.5 h-3.5 mr-1" />
-                    {soldRecently}+ sold recently
+                    <span className="text-[10px] font-semibold text-yellow-500 uppercase">
+                      express
+                    </span>
                   </div>
-                )}
+                </div>
               </div>
-            </Link>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✨ Fade Animation                                                          */
+/* 🎬 Fade Animation (once globally)                                          */
 /* -------------------------------------------------------------------------- */
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && !document.getElementById("fadein-style")) {
   const style = document.createElement("style");
+  style.id = "fadein-style";
   style.innerHTML = `
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
+      from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
     .animate-fadeIn { animation: fadeIn 0.25s ease-in-out; }

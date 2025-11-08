@@ -11,18 +11,42 @@ import {
   PackageCheck,
 } from "lucide-react";
 
+/* -------------------------------------------------------------------------- */
+/* 🌟 Active Orders Tab — Cached + Shimmer + Smooth UX                         */
+/* -------------------------------------------------------------------------- */
 export default function ActiveOrdersTab() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const api = process.env.NEXT_PUBLIC_API_URL;
 
+  const CACHE_KEY = "vendor_active_orders";
+  const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Load Cached + Auto-Fetch                                                */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
-    fetchOrders();
+    const now = Date.now();
+    const cached = localStorage.getItem(CACHE_KEY);
+    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+
+    if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
+      setOrders(JSON.parse(cached));
+      setLoading(false);
+    }
+
+    fetchOrders(false);
+    const interval = setInterval(() => fetchOrders(false), 45000); // every 45 s
+    return () => clearInterval(interval);
   }, []);
 
-  // 🔁 Fetch vendor active orders
-  const fetchOrders = async () => {
+  /* -------------------------------------------------------------------------- */
+  /* 🔁 Fetch Vendor Active Orders                                              */
+  /* -------------------------------------------------------------------------- */
+  const fetchOrders = async (showLoader = true) => {
     try {
+      if (showLoader) setRefreshing(true);
       const token = localStorage.getItem("token");
       if (!token) return;
 
@@ -32,22 +56,27 @@ export default function ActiveOrdersTab() {
       const data = await res.json();
       const allOrders = data.orders || [];
 
-      // Show only active orders
       const active = allOrders.filter(
         (o: any) =>
           o.status === "pending" ||
           o.status === "paid" ||
           o.status === "processing"
       );
+
       setOrders(active);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(active));
+      localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
     } catch (err) {
       console.error("❌ Failed to fetch vendor orders:", err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // 🔘 Handle vendor actions
+  /* -------------------------------------------------------------------------- */
+  /* 🔘 Handle Vendor Actions                                                   */
+  /* -------------------------------------------------------------------------- */
   const handleAction = async (
     id: number,
     action: "approve" | "complete" | "cancel" | "refund"
@@ -62,36 +91,33 @@ export default function ActiveOrdersTab() {
       });
       const data = await res.json();
 
-      if (!res.ok) {
-        alert(data.message || "Action failed");
-        return;
-      }
+      if (!res.ok) return alert(data.message || "Action failed");
 
-      // Update local state visually
       setOrders((prev) =>
-        prev.map((o) =>
-          o.id === id
-            ? {
-                ...o,
-                status:
-                  action === "approve"
-                    ? "processing"
-                    : action === "complete"
-                    ? "completed"
-                    : action === "refund"
-                    ? "refunded"
-                    : action === "cancel"
-                    ? "cancelled"
-                    : o.status,
-              }
-            : o
-        )
+        prev
+          .map((o) =>
+            o.id === id
+              ? {
+                  ...o,
+                  status:
+                    action === "approve"
+                      ? "processing"
+                      : action === "complete"
+                      ? "completed"
+                      : action === "refund"
+                      ? "refunded"
+                      : action === "cancel"
+                      ? "cancelled"
+                      : o.status,
+                }
+              : o
+          )
+          .filter(
+            (o) =>
+              !["complete", "refund", "cancel"].includes(action) ||
+              o.id !== id
+          )
       );
-
-      // Remove completed/cancelled/refunded orders from view
-      if (["complete", "refund", "cancel"].includes(action)) {
-        setOrders((prev) => prev.filter((o) => o.id !== id));
-      }
 
       alert(data.message);
     } catch (err) {
@@ -100,22 +126,60 @@ export default function ActiveOrdersTab() {
     }
   };
 
+  /* -------------------------------------------------------------------------- */
+  /* ✨ Shimmer Loader                                                          */
+  /* -------------------------------------------------------------------------- */
+  const OrdersShimmer = () => (
+    <div className="space-y-3 animate-pulse">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden"
+        >
+          <div className="w-24 h-24 bg-gray-200" />
+          <div className="flex-1 p-3 space-y-3">
+            <div className="h-3 w-1/2 bg-gray-200 rounded" />
+            <div className="h-2 w-2/3 bg-gray-100 rounded" />
+            <div className="h-2 w-1/3 bg-gray-100 rounded" />
+            <div className="grid grid-cols-3 gap-2 pt-3">
+              <div className="h-6 bg-gray-200 rounded" />
+              <div className="h-6 bg-gray-200 rounded" />
+              <div className="h-6 bg-gray-200 rounded" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  /* -------------------------------------------------------------------------- */
+  /* 🌀 Loading + Empty States                                                  */
+  /* -------------------------------------------------------------------------- */
   if (loading)
     return (
-      <div className="text-center text-gray-500 py-20">
-        Loading vendor orders...
+      <div className="px-4 py-6 text-gray-500">
+        <OrdersShimmer />
       </div>
     );
 
   if (orders.length === 0)
     return (
-      <div className="text-center text-gray-500 py-20">
+      <div className="text-center text-gray-500 py-20 animate-fadeIn">
         No active orders right now.
       </div>
     );
 
+  /* -------------------------------------------------------------------------- */
+  /* 💫 Active Orders UI                                                       */
+  /* -------------------------------------------------------------------------- */
   return (
-    <div className="space-y-3 mb-20">
+    <div className="space-y-3 mb-20 animate-fadeIn">
+      {refreshing && (
+        <div className="text-xs text-center text-gray-400 animate-pulse pb-1">
+          Refreshing orders...
+        </div>
+      )}
+
       {orders.map((order) => {
         const product = order.product || {};
         const buyer = order.buyer || {};
@@ -155,7 +219,7 @@ export default function ActiveOrdersTab() {
 
             {/* 📦 Order Info */}
             <div className="flex-1 p-3 flex flex-col justify-between">
-              {/* Header Row */}
+              {/* Header */}
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-gray-900 text-[15px] line-clamp-1">
@@ -188,7 +252,7 @@ export default function ActiveOrdersTab() {
                 </span>
               </div>
 
-              {/* Details Row */}
+              {/* Details */}
               <div className="flex justify-between items-center text-xs text-gray-600 mt-2">
                 <div className="flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
@@ -204,7 +268,7 @@ export default function ActiveOrdersTab() {
                 {buyer.address || "No address provided"}
               </div>
 
-              {/* ☎️ Call Buyer Button */}
+              {/* ☎️ Call Buyer */}
               {buyer.phone && (
                 <div className="mt-3">
                   <a
@@ -273,4 +337,22 @@ export default function ActiveOrdersTab() {
       })}
     </div>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* ✨ Fade Animation (Global)                                                  */
+/* -------------------------------------------------------------------------- */
+if (typeof window !== "undefined") {
+  if (!document.getElementById("fadein-style")) {
+    const style = document.createElement("style");
+    style.id = "fadein-style";
+    style.innerHTML = `
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
+    `;
+    document.head.appendChild(style);
+  }
 }

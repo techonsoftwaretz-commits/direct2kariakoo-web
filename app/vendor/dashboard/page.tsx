@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import Link from "next/link";
 import VendorHeader from "./components/VendorHeader";
 import WelcomeHeader from "./components/WelcomeHeader";
@@ -11,28 +11,47 @@ import MyProductsCard from "./components/MyProductsCard";
 import VendorBottomNav from "../VendorBottomNav";
 import { api } from "@/lib/api";
 
+/* -------------------------------------------------------------------------- */
+/* 🌟 Vendor Dashboard (Optimized + Shimmer + Cache)                          */
+/* -------------------------------------------------------------------------- */
 export default function VendorDashboard() {
   const [vendor, setVendor] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
   const CACHE_KEY_VENDOR = "d2k_vendor_data";
   const CACHE_KEY_PRODUCTS = "d2k_vendor_products";
-  const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000;
+  const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12h cache
 
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Load Cached Data + Fetch Dashboard Data                                 */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cachedVendor = localStorage.getItem(CACHE_KEY_VENDOR);
     const cachedProducts = localStorage.getItem(CACHE_KEY_PRODUCTS);
     const cachedTime = localStorage.getItem(`${CACHE_KEY_VENDOR}_time`);
 
-    if (cachedVendor && cachedProducts && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      setVendor(JSON.parse(cachedVendor));
-      setProducts(JSON.parse(cachedProducts));
+    // ✅ Use cached data instantly if fresh
+    if (
+      cachedVendor &&
+      cachedProducts &&
+      cachedTime &&
+      now - parseInt(cachedTime) < CACHE_EXPIRY_MS
+    ) {
+      const vendorData = JSON.parse(cachedVendor);
+      const productList = JSON.parse(cachedProducts);
+      setVendor(vendorData);
+      setProducts(productList);
+      setFilteredProducts(productList);
       setLoading(false);
     }
 
+    // ✅ Always refresh background data
     const fetchDashboardData = async () => {
       try {
         setError(null);
@@ -52,6 +71,7 @@ export default function VendorDashboard() {
 
         setVendor(vendorData);
         setProducts(productList);
+        setFilteredProducts(productList);
 
         localStorage.setItem(CACHE_KEY_VENDOR, JSON.stringify(vendorData));
         localStorage.setItem(CACHE_KEY_PRODUCTS, JSON.stringify(productList));
@@ -75,8 +95,64 @@ export default function VendorDashboard() {
     fetchDashboardData();
   }, []);
 
+  /* -------------------------------------------------------------------------- */
+  /* 🔍 Handle Search Logic (debounced + client-side)                           */
+  /* -------------------------------------------------------------------------- */
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredProducts(products);
+      return;
+    }
+
+    const delay = setTimeout(() => {
+      setIsSearching(true);
+      const q = searchQuery.toLowerCase();
+
+      const results = products.filter((p) => {
+        const name = p?.name?.toLowerCase() || "";
+        const sub = p?.subcategory?.name?.toLowerCase() || "";
+        const attr =
+          p?.attribute_values?.map((a: any) => a?.value?.toLowerCase()).join(" ") ||
+          "";
+        return name.includes(q) || sub.includes(q) || attr.includes(q);
+      });
+
+      setFilteredProducts(results);
+      setIsSearching(false);
+    }, 300);
+
+    return () => clearTimeout(delay);
+  }, [searchQuery, products]);
+
+  /* -------------------------------------------------------------------------- */
+  /* ✨ Shimmer Loader for Dashboard Skeleton                                   */
+  /* -------------------------------------------------------------------------- */
+  const DashboardShimmer = () => (
+    <div className="animate-pulse space-y-6">
+      <div className="h-8 bg-gray-200 rounded-md w-1/3 mx-auto"></div>
+      <div className="grid grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-20 bg-white border border-gray-100 shadow-sm rounded-lg"
+          ></div>
+        ))}
+      </div>
+      <div className="h-40 bg-white border border-gray-100 rounded-lg"></div>
+      <div className="h-8 bg-gray-200 rounded-md w-1/2 mx-auto"></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-40 bg-white rounded-md shadow-sm"></div>
+        ))}
+      </div>
+    </div>
+  );
+
+  /* -------------------------------------------------------------------------- */
+  /* 🧩 UI Section                                                              */
+  /* -------------------------------------------------------------------------- */
   return (
-    <div className="pb-24 bg-gray-50 min-h-screen">
+    <div className="pb-24 bg-gray-50 min-h-screen font-poppins">
       <VendorHeader vendor={vendor} />
 
       <div className="px-3 sm:px-4 md:px-5 pt-4">
@@ -87,19 +163,49 @@ export default function VendorDashboard() {
         )}
 
         {loading ? (
-          <div className="text-center py-10 text-gray-500 animate-pulse">
-            Loading your dashboard...
-          </div>
+          <DashboardShimmer />
         ) : (
           <>
+            {/* Welcome + Stats */}
             <WelcomeHeader vendor={vendor} />
             <StatsRow products={products} />
             <SalesCard />
-            <MyProductsCard products={products} loading={loading} />
+
+            {/* SEARCH BAR */}
+            <div className="relative max-w-2xl mx-auto mb-6 mt-3">
+              <div className="flex items-center bg-white border border-gray-200 shadow-sm rounded-full px-4 py-2 transition focus-within:ring-2 focus-within:ring-teal-500">
+                <Search className="w-5 h-5 text-gray-400 mr-2" />
+                <input
+                  type="text"
+                  placeholder="Search products by name, category, or attributes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="flex-1 outline-none text-gray-800 placeholder-gray-400 bg-transparent"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="text-gray-400 hover:text-gray-600 transition"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {isSearching && (
+                <div className="absolute right-5 top-2.5 text-xs text-gray-400 animate-pulse">
+                  Searching...
+                </div>
+              )}
+            </div>
+
+            {/* PRODUCTS */}
+            <MyProductsCard products={filteredProducts} loading={loading} />
           </>
         )}
       </div>
 
+      {/* ➕ ADD PRODUCT BUTTON */}
       <Link
         href="/vendor/products/add"
         className="fixed bottom-20 right-5 md:bottom-6 md:right-8 bg-teal-600 hover:bg-teal-700 text-white px-4 py-3 rounded-full shadow-lg flex items-center gap-2 transition"

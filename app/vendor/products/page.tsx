@@ -14,7 +14,7 @@ import ProductAttributesTable from "./components/ProductAttributesTable";
 import ProductRatingSection from "./components/ProductRatingSection";
 
 /* -------------------------------------------------------------------------- */
-/* 🧩 Inner Component (wrapped in Suspense below) */
+/* 🌟 Inner Component (wrapped in Suspense below) */
 /* -------------------------------------------------------------------------- */
 function VendorProductDetailsInner() {
   const router = useRouter();
@@ -24,19 +24,24 @@ function VendorProductDetailsInner() {
   const [product, setProduct] = useState<any>(null);
   const [vendor, setVendor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [shimmer, setShimmer] = useState(true);
 
   // ✅ Cache keys
   const CACHE_KEY_VENDOR = "d2k_vendor_data";
   const CACHE_KEY_PRODUCT = (id: string) => `d2k_product_${id}`;
-  const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12 hours
+  const CACHE_EXPIRY_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-  /* --------------------------- LOAD VENDOR --------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 🟢 LOAD VENDOR FROM CACHE */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const cachedVendor = localStorage.getItem(CACHE_KEY_VENDOR);
     if (cachedVendor) setVendor(JSON.parse(cachedVendor));
   }, []);
 
-  /* --------------------------- LOAD PRODUCT --------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 🟢 LOAD PRODUCT (Cache + Fresh Fetch) */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
     if (!productId) {
       setLoading(false);
@@ -44,20 +49,20 @@ function VendorProductDetailsInner() {
     }
 
     const now = Date.now();
-    const cached = localStorage.getItem(CACHE_KEY_PRODUCT(productId));
-    const cachedTime = localStorage.getItem(`${CACHE_KEY_PRODUCT(productId)}_time`);
+    const cacheData = localStorage.getItem(CACHE_KEY_PRODUCT(productId));
+    const cacheTime = localStorage.getItem(`${CACHE_KEY_PRODUCT(productId)}_time`);
 
-    // ✅ Load cached product instantly if valid
-    if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      setProduct(JSON.parse(cached));
+    // 🧠 Instant Load from Cache
+    if (cacheData && cacheTime && now - parseInt(cacheTime) < CACHE_EXPIRY_MS) {
+      setProduct(JSON.parse(cacheData));
       setLoading(false);
+      setShimmer(false);
     }
 
-    // ✅ Fetch fresh data in background (no blocking UI)
+    // 🔄 Fetch Fresh Data in Background
     fetchProduct();
   }, [productId]);
 
-  /* --------------------------- FETCH PRODUCT --------------------------- */
   async function fetchProduct() {
     if (!productId) return;
     try {
@@ -71,22 +76,48 @@ function VendorProductDetailsInner() {
       console.error("❌ Failed to load product:", err);
     } finally {
       setLoading(false);
+      // Small delay for shimmer fade-out animation
+      setTimeout(() => setShimmer(false), 400);
     }
   }
 
-  /* --------------------------- IMAGE HANDLER --------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 🖼️ IMAGE URL HANDLER */
+  /* -------------------------------------------------------------------------- */
   const getImageUrl = (img?: string): string => {
     if (!img) return "/placeholder.png";
-
-    // ✅ If full Laravel URL, use directly
     if (img.startsWith("http")) return img;
-
-    // ✅ Otherwise build from base API
     const base = process.env.NEXT_PUBLIC_API_URL?.replace("/api", "") || "";
     return `${base}/storage/${img.replace(/^\/?storage\//, "")}`;
   };
 
-  /* --------------------------- RENDER LOGIC --------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 🖼️ IMAGE ARRAY PREP */
+  /* -------------------------------------------------------------------------- */
+  const images =
+    product?.images?.map((img: any) => {
+      const val =
+        typeof img === "string"
+          ? img
+          : img.image || img.image_url || img.url || img.path;
+      return getImageUrl(val);
+    }) || ["/placeholder.png"];
+
+  /* -------------------------------------------------------------------------- */
+  /* 🩶 SHIMMER COMPONENT */
+  /* -------------------------------------------------------------------------- */
+  const Shimmer = () => (
+    <div className="animate-pulse space-y-4 p-6">
+      <div className="w-full h-64 bg-gray-200 rounded-lg"></div>
+      <div className="h-6 bg-gray-200 rounded w-1/2"></div>
+      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+      <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+    </div>
+  );
+
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 RENDER LOGIC */
+  /* -------------------------------------------------------------------------- */
   if (!productId)
     return (
       <div className="flex flex-col items-center justify-center h-screen text-gray-500">
@@ -100,17 +131,12 @@ function VendorProductDetailsInner() {
       </div>
     );
 
-  const images =
-    product?.images?.map((img: any) =>
-      getImageUrl(img?.image || img?.image_url || img?.url)
-    ) || ["/placeholder.png"];
-
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-poppins relative">
-      {/* Header */}
+      {/* 🧭 Header */}
       <VendorHeader vendor={vendor} />
 
-      {/* Back Button */}
+      {/* 🔙 Back Button */}
       <div className="max-w-5xl mx-auto px-3 sm:px-4 mt-4">
         <button
           onClick={() => router.back()}
@@ -121,15 +147,21 @@ function VendorProductDetailsInner() {
         </button>
       </div>
 
-      {/* CONTENT */}
+      {/* 🧱 CONTENT */}
       <div className="flex-1 overflow-y-auto pb-[100px] sm:pb-[120px]">
-        <div className="max-w-5xl mx-auto bg-white mt-3 rounded-lg overflow-hidden shadow-sm">
+        <div className="max-w-5xl mx-auto bg-white mt-3 rounded-lg overflow-hidden shadow-sm transition-all duration-500">
           {/* Product Images */}
-          <ProductImageSlider images={images} />
+          {shimmer ? (
+            <div className="animate-pulse bg-gray-200 w-full h-80"></div>
+          ) : (
+            <ProductImageSlider images={images} />
+          )}
 
           {/* Product Details */}
           <div className="p-4 sm:p-5 space-y-5">
-            {product ? (
+            {loading ? (
+              <Shimmer />
+            ) : product ? (
               <>
                 <ProductTitleSection product={product} />
                 <ProductPriceRow product={product} />
@@ -143,22 +175,23 @@ function VendorProductDetailsInner() {
               </>
             ) : (
               <div className="text-center text-gray-500 py-10">
-                <p>Loading product info...</p>
+                <p>Product not found.</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Bottom Action Bar */}
-      {product && (
+      {/* 🟨 Bottom Action Bar */}
+      {product && !loading && (
         <div
           className="
             fixed bottom-0 left-0 right-0 
-            bg-white border-t shadow-md 
+            bg-white border-t shadow-lg 
             p-4 flex justify-center
             z-[999]
-            safe-bottom
+            backdrop-blur-md
+            transition-all duration-300
           "
           style={{
             paddingBottom: "calc(env(safe-area-inset-bottom, 12px) + 8px)",
@@ -167,7 +200,7 @@ function VendorProductDetailsInner() {
           <Link
             href={`/vendor/products/edit?id=${product.id}`}
             className="
-              bg-yellow-400 hover:bg-yellow-500 
+              bg-gradient-to-r from-yellow-400 to-yellow-500 hover:to-yellow-600
               text-black font-semibold 
               py-3 px-10 rounded-full 
               shadow-md text-sm sm:text-base 
@@ -183,7 +216,7 @@ function VendorProductDetailsInner() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✅ Page Wrapper (Suspense fallback for routing) */
+/* ⚡ Suspense Wrapper (for instant render safety) */
 /* -------------------------------------------------------------------------- */
 export default function VendorProductDetailsPage() {
   return (

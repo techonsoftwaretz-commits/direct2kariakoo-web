@@ -3,47 +3,99 @@
 import { useEffect, useState } from "react";
 import { RotateCcw, Calendar, Phone } from "lucide-react";
 
+/* -------------------------------------------------------------------------- */
+/* 🌟 Refund Tab — Cached + Shimmer + Smooth UX                               */
+/* -------------------------------------------------------------------------- */
 export default function RefundTab() {
   const [refunds, setRefunds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const api = process.env.NEXT_PUBLIC_API_URL;
 
+  const CACHE_KEY = "vendor_refunds";
+  const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Load Cached Data + Auto Refresh                                         */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
-    const fetchRefunds = async () => {
-      try {
-        const token = localStorage.getItem("token");
-        if (!token) return;
+    const now = Date.now();
+    const cached = localStorage.getItem(CACHE_KEY);
+    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
 
-        const res = await fetch(`${api}/vendor/orders`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+    if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
+      setRefunds(JSON.parse(cached));
+      setLoading(false);
+    }
 
-        const data = await res.json();
-        const allOrders = data.orders || [];
-
-        // ✅ Only refunded orders
-        const refunded = allOrders.filter((o: any) => o.status === "refunded");
-        setRefunds(refunded);
-      } catch (err) {
-        console.error("❌ Failed to fetch refund orders:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRefunds();
+    fetchRefunds(false);
+    const interval = setInterval(() => fetchRefunds(false), 60000);
+    return () => clearInterval(interval);
   }, []);
 
+  /* -------------------------------------------------------------------------- */
+  /* 🔁 Fetch Vendor Refund Orders                                              */
+  /* -------------------------------------------------------------------------- */
+  const fetchRefunds = async (showLoader = true) => {
+    try {
+      if (showLoader) setRefreshing(true);
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const res = await fetch(`${api}/vendor/orders`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      const allOrders = data.orders || [];
+
+      const refunded = allOrders.filter((o: any) => o.status === "refunded");
+      setRefunds(refunded);
+
+      localStorage.setItem(CACHE_KEY, JSON.stringify(refunded));
+      localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
+    } catch (err) {
+      console.error("❌ Failed to fetch refund orders:", err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* ✨ Shimmer Loader                                                          */
+  /* -------------------------------------------------------------------------- */
+  const RefundShimmer = () => (
+    <div className="space-y-3 animate-pulse">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden"
+        >
+          <div className="w-24 h-24 bg-gray-200" />
+          <div className="flex-1 p-3 space-y-3">
+            <div className="h-3 w-2/3 bg-gray-200 rounded" />
+            <div className="h-2 w-1/3 bg-gray-100 rounded" />
+            <div className="h-2 w-1/2 bg-gray-100 rounded" />
+            <div className="h-6 w-full bg-gray-200 rounded mt-2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  /* -------------------------------------------------------------------------- */
+  /* 🌀 Loading + Empty States                                                  */
+  /* -------------------------------------------------------------------------- */
   if (loading)
     return (
-      <div className="text-center text-gray-500 py-20">
-        Loading refund requests...
+      <div className="px-4 py-6 text-gray-500">
+        <RefundShimmer />
       </div>
     );
 
   if (refunds.length === 0)
     return (
-      <div className="flex flex-col items-center justify-center py-32 text-gray-500">
+      <div className="flex flex-col items-center justify-center py-32 text-gray-500 animate-fadeIn">
         <div className="w-24 h-24 bg-yellow-50 rounded-2xl flex items-center justify-center mb-4">
           <RotateCcw className="w-10 h-10 text-yellow-500" />
         </div>
@@ -54,8 +106,17 @@ export default function RefundTab() {
       </div>
     );
 
+  /* -------------------------------------------------------------------------- */
+  /* 💫 Main Render                                                            */
+  /* -------------------------------------------------------------------------- */
   return (
-    <div className="space-y-4 mb-20">
+    <div className="space-y-4 mb-20 animate-fadeIn">
+      {refreshing && (
+        <div className="text-xs text-center text-gray-400 animate-pulse pb-1">
+          Refreshing refund list...
+        </div>
+      )}
+
       {refunds.map((order) => {
         const product = order.product || {};
         const buyer = order.buyer || {};
@@ -146,4 +207,22 @@ export default function RefundTab() {
       })}
     </div>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* ✨ Fade Animation (Global)                                                  */
+/* -------------------------------------------------------------------------- */
+if (typeof window !== "undefined") {
+  if (!document.getElementById("fadein-style")) {
+    const style = document.createElement("style");
+    style.id = "fadein-style";
+    style.innerHTML = `
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
+    `;
+    document.head.appendChild(style);
+  }
 }

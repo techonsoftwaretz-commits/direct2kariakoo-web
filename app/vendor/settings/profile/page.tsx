@@ -18,11 +18,16 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 
+/* -------------------------------------------------------------------------- */
+/* 🌟 Vendor Profile — Cached + Shimmer + Smooth UX                            */
+/* -------------------------------------------------------------------------- */
 export default function VendorProfilePage() {
   const [vendor, setVendor] = useState<any>(null);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
   const [editingPhone, setEditingPhone] = useState(false);
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
@@ -41,32 +46,68 @@ export default function VendorProfilePage() {
     account: "",
   });
 
-  /* ---------------------------- Init ---------------------------- */
+  const CACHE_KEY = "vendor_profile_cache";
+  const CACHE_EXPIRY_MS = 5 * 60 * 1000;
+
+  /* -------------------------------------------------------------------------- */
+  /* 🧠 Init                                                                    */
+  /* -------------------------------------------------------------------------- */
   useEffect(() => {
+    const now = Date.now();
+    const cached = localStorage.getItem(CACHE_KEY);
+    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+
+    if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
+      const data = JSON.parse(cached);
+      populateData(data);
+      setLoading(false);
+    }
+
     fetchProfile();
     fetchPaymentTypes();
+
+    const interval = setInterval(fetchProfile, 60000);
+    return () => clearInterval(interval);
   }, []);
 
-  /* ---------------------------- Fetch profile ---------------------------- */
+  function populateData(data: any) {
+    setUser(data.user);
+    setVendor(data.vendor);
+    setPhone(data.vendor?.phone || "");
+    setLocation(data.vendor?.business_address || "");
+    setPaymentOptions(data.paymentOptions || []);
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /* 🔁 Fetch Profile                                                           */
+  /* -------------------------------------------------------------------------- */
   async function fetchProfile() {
     try {
-      setLoading(true);
+      setRefreshing(true);
       const res = await api.get("/me");
       const data = res.data.user || res.data;
-      setUser(data);
-      setVendor(data.vendor || {});
-      setPhone(data.vendor?.phone || "");
-      setLocation(data.vendor?.business_address || "");
+
       const payRes = await api.get("/vendor/payment-options");
-      setPaymentOptions(payRes.data || []);
+      const merged = {
+        user: data,
+        vendor: data.vendor || {},
+        paymentOptions: payRes.data || [],
+      };
+
+      populateData(merged);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(merged));
+      localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
     } catch (err) {
       console.error("Failed to fetch profile", err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
-  /* ---------------------------- Payment Types ---------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 💳 Payment Fetchers                                                       */
+  /* -------------------------------------------------------------------------- */
   async function fetchPaymentTypes() {
     try {
       const res = await api.get("/vendor/payment-types");
@@ -85,7 +126,9 @@ export default function VendorProfilePage() {
     }
   }
 
-  /* ---------------------------- Upload Logo ---------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 📸 Upload Logo                                                             */
+  /* -------------------------------------------------------------------------- */
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -99,33 +142,34 @@ export default function VendorProfilePage() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       fetchProfile();
-    } catch (err: any) {
+    } catch {
       alert("Failed to upload picture");
-      console.error("Upload failed:", err);
     } finally {
       setIsUploading(false);
     }
   }
 
-  /* ---------------------------- Update Phone/Address ---------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* ✏️ Update Field                                                            */
+  /* -------------------------------------------------------------------------- */
   async function handleUpdate(field: string, value: string) {
     if (!value) return alert("Value cannot be empty");
 
     const formData = new FormData();
     formData.append(field, value);
-
     try {
       await api.post("/vendor/update-profile", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       fetchProfile();
-    } catch (err: any) {
+    } catch {
       alert("Update failed");
-      console.error("Update failed:", err);
     }
   }
 
-  /* ---------------------------- Add or Edit Payment ---------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 💾 Add / Edit Payment                                                      */
+  /* -------------------------------------------------------------------------- */
   async function handleSavePayment() {
     const { type_id, method_id, account } = paymentForm;
     if (!type_id || !method_id || !account)
@@ -138,47 +182,46 @@ export default function VendorProfilePage() {
 
     try {
       setSavingPayment(true);
-
       if (editingPayment) {
-        // 🟡 Update existing payment option
-        await api.post(`/vendor/update-payment-option/${editingPayment.id}`, formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
+        await api.post(
+          `/vendor/update-payment-option/${editingPayment.id}`,
+          formData,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
       } else {
-        // 🟢 Add new payment option
         await api.post("/vendor/add-payment-option", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
       }
-
       await fetchProfile();
       setShowPaymentModal(false);
       setPaymentForm({ type_id: "", method_id: "", account: "" });
       setEditingPayment(null);
-    } catch (err: any) {
+    } catch {
       alert("Failed to save payment option");
-      console.error("Save payment failed:", err);
     } finally {
       setSavingPayment(false);
     }
   }
 
-  /* ---------------------------- Delete Payment ---------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 🗑️ Delete Payment                                                          */
+  /* -------------------------------------------------------------------------- */
   async function handleDeletePayment(id: number) {
     if (!confirm("Remove this payment method?")) return;
     try {
       await api.post(`/vendor/delete-payment-option/${id}`);
       fetchProfile();
-    } catch (err: any) {
+    } catch {
       alert("Failed to delete payment option");
-      console.error("Delete failed:", err);
     }
   }
 
-  /* ---------------------------- Open Modal ---------------------------- */
+  /* -------------------------------------------------------------------------- */
+  /* 🪟 Open Payment Modal                                                      */
+  /* -------------------------------------------------------------------------- */
   function openPaymentModal(option?: any) {
     if (option) {
-      // Editing existing payment
       setEditingPayment(option);
       setPaymentForm({
         type_id: option.payment_type?.id || "",
@@ -187,34 +230,65 @@ export default function VendorProfilePage() {
       });
       fetchPaymentMethods(option.payment_type?.id);
     } else {
-      // Adding new payment
       setEditingPayment(null);
       setPaymentForm({ type_id: "", method_id: "", account: "" });
     }
     setShowPaymentModal(true);
   }
 
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <Loader2 className="w-6 h-6 animate-spin text-yellow-500" />
+  /* -------------------------------------------------------------------------- */
+  /* ✨ Shimmer Loader                                                          */
+  /* -------------------------------------------------------------------------- */
+  const ProfileShimmer = () => (
+    <div className="max-w-2xl mx-auto p-5 animate-pulse">
+      <div className="flex flex-col items-center mb-8">
+        <div className="w-28 h-28 bg-gray-200 rounded-full mb-4" />
+        <div className="h-4 w-40 bg-gray-200 rounded mb-2" />
+        <div className="h-3 w-24 bg-gray-100 rounded" />
       </div>
-    );
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="bg-white p-4 mb-4 rounded-2xl shadow-sm border border-gray-100">
+          <div className="h-3 w-1/2 bg-gray-100 rounded mb-2" />
+          <div className="h-4 w-1/3 bg-gray-200 rounded" />
+        </div>
+      ))}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mt-4">
+        <div className="h-4 w-1/3 bg-gray-200 rounded mb-3" />
+        <div className="space-y-2">
+          <div className="h-3 w-full bg-gray-100 rounded" />
+          <div className="h-3 w-2/3 bg-gray-100 rounded" />
+        </div>
+      </div>
+    </div>
+  );
+
+  /* -------------------------------------------------------------------------- */
+  /* 🌀 Render States                                                           */
+  /* -------------------------------------------------------------------------- */
+  if (loading) return <ProfileShimmer />;
 
   const logoUrl = vendor?.logo
     ? `${process.env.NEXT_PUBLIC_STORAGE_URL?.replace(/\/$/, "")}/${vendor.logo}`
     : "/placeholder.png";
 
+  /* -------------------------------------------------------------------------- */
+  /* 💫 Main Render                                                            */
+  /* -------------------------------------------------------------------------- */
   return (
-    <main className="min-h-screen bg-[#FAFAFA] pb-24 font-poppins">
+    <main className="min-h-screen bg-[#FAFAFA] pb-24 font-poppins animate-fadeIn">
       {/* Header */}
       <header className="bg-white shadow-sm p-4 sticky top-0 z-30">
         <h1 className="text-lg font-semibold text-gray-800 text-center">
           My Profile
         </h1>
+        {refreshing && (
+          <p className="text-center text-xs text-gray-400 animate-pulse">
+            Refreshing profile...
+          </p>
+        )}
       </header>
 
-      {/* Main Body */}
+      {/* Body */}
       <div className="max-w-2xl mx-auto p-5">
         {/* Avatar */}
         <div className="flex flex-col items-center mb-8 relative">
@@ -232,12 +306,7 @@ export default function VendorProfilePage() {
               ) : (
                 <Camera className="w-4 h-4 text-yellow-600" />
               )}
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleUpload}
-              />
+              <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
             </label>
           </div>
           <h2 className="mt-4 text-lg font-semibold text-gray-900">
@@ -265,8 +334,6 @@ export default function VendorProfilePage() {
           setEditing={setEditingPhone}
           onSave={(v: string) => handleUpdate("phone", v)}
         />
-
-        {/* Address */}
         <ProfileCard
           icon={<MapPin className="w-5 h-5 text-yellow-600" />}
           title="Business Address"
@@ -286,9 +353,7 @@ export default function VendorProfilePage() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <CreditCard className="w-5 h-5 text-yellow-600" />
-              <h4 className="text-sm font-medium text-gray-800">
-                Payment Options
-              </h4>
+              <h4 className="text-sm font-medium text-gray-800">Payment Options</h4>
             </div>
             <button
               onClick={() => openPaymentModal()}
@@ -306,8 +371,7 @@ export default function VendorProfilePage() {
               >
                 <div>
                   <p className="text-sm font-medium text-gray-800">
-                    {opt.payment_type?.name || "-"} –{" "}
-                    {opt.payment_method?.name || "-"}
+                    {opt.payment_type?.name || "-"} – {opt.payment_method?.name || "-"}
                   </p>
                   <p className="text-xs text-gray-600 mt-1">{opt.account}</p>
                 </div>
@@ -335,10 +399,10 @@ export default function VendorProfilePage() {
         </div>
       </div>
 
-      {/* Add / Edit Payment Modal */}
+      {/* Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm">
-          <div className="bg-white w-[90%] max-w-md rounded-3xl shadow-2xl p-6 relative animate-fade-in">
+          <div className="bg-white w-[90%] max-w-md rounded-3xl shadow-2xl p-6 relative animate-fadeIn">
             <button
               onClick={() => setShowPaymentModal(false)}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
@@ -358,7 +422,7 @@ export default function VendorProfilePage() {
                   setPaymentForm((p) => ({ ...p, type_id: id, method_id: "" }));
                   fetchPaymentMethods(id);
                 }}
-                className="w-full border border-gray-200 rounded-xl p-2.5 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400 focus:bg-white"
+                className="w-full border border-gray-200 rounded-xl p-2.5 bg-gray-50 focus:ring-2 focus:ring-yellow-400"
               >
                 <option value="">Select Type</option>
                 {paymentTypes.map((t: any) => (
@@ -371,13 +435,10 @@ export default function VendorProfilePage() {
               <select
                 value={paymentForm.method_id}
                 onChange={(e) =>
-                  setPaymentForm((p) => ({
-                    ...p,
-                    method_id: e.target.value,
-                  }))
+                  setPaymentForm((p) => ({ ...p, method_id: e.target.value }))
                 }
                 disabled={!paymentForm.type_id}
-                className="w-full border border-gray-200 rounded-xl p-2.5 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400 focus:bg-white disabled:opacity-50"
+                className="w-full border border-gray-200 rounded-xl p-2.5 bg-gray-50 focus:ring-2 focus:ring-yellow-400 disabled:opacity-50"
               >
                 <option value="">Select Method</option>
                 {paymentMethods.map((m: any) => (
@@ -391,10 +452,8 @@ export default function VendorProfilePage() {
                 type="text"
                 placeholder="Enter account / phone number"
                 value={paymentForm.account}
-                onChange={(e) =>
-                  setPaymentForm((p) => ({ ...p, account: e.target.value }))
-                }
-                className="w-full border border-gray-200 rounded-xl p-2.5 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400 focus:bg-white"
+                onChange={(e) => setPaymentForm((p) => ({ ...p, account: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl p-2.5 bg-gray-50 focus:ring-2 focus:ring-yellow-400"
               />
             </div>
 
@@ -424,7 +483,9 @@ export default function VendorProfilePage() {
   );
 }
 
-/* ----------------------------- Subcomponents ----------------------------- */
+/* -------------------------------------------------------------------------- */
+/* 🧩 Subcomponents                                                            */
+/* -------------------------------------------------------------------------- */
 function ProfileCard({
   icon,
   title,
@@ -445,21 +506,13 @@ function ProfileCard({
           <p className="font-medium text-gray-900 mt-1">{subtitle}</p>
         </div>
       </div>
-      {action && action}
+      {action}
     </div>
   );
 }
 
-function EditableRow({
-  icon,
-  label,
-  value,
-  editing,
-  setEditing,
-  onSave,
-}: any) {
+function EditableRow({ icon, label, value, editing, setEditing, onSave }: any) {
   const [val, setVal] = useState(value);
-
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex items-start justify-between">
       <div className="flex items-start gap-3">
@@ -471,7 +524,7 @@ function EditableRow({
               <input
                 value={val}
                 onChange={(e) => setVal(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-44 text-gray-900 bg-gray-50 focus:ring-2 focus:ring-yellow-400"
+                className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-44 bg-gray-50 focus:ring-2 focus:ring-yellow-400"
               />
               <button
                 onClick={() => {
@@ -498,4 +551,17 @@ function EditableRow({
       )}
     </div>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* 🎬 Fade Animation                                                           */
+/* -------------------------------------------------------------------------- */
+if (typeof window !== "undefined" && !document.getElementById("fadein-style")) {
+  const style = document.createElement("style");
+  style.id = "fadein-style";
+  style.innerHTML = `
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
+  `;
+  document.head.appendChild(style);
 }
