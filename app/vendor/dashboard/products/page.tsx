@@ -2,15 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { RefreshCw, ShoppingCart, Star, Heart, CheckCircle2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { RefreshCw, ShoppingCart, Star, Heart } from "lucide-react";
 import { api } from "@/lib/api";
 import VendorHeader from "../components/VendorHeader";
 
-/* -------------------------------------------------------------------------- */
-/* 🌟 Vendor My Products Page — Clean, World-Class Design (with Caching)      */
-/* -------------------------------------------------------------------------- */
 export default function VendorMyProductsPage() {
+  const router = useRouter();
   const [products, setProducts] = useState<any[]>([]);
   const [vendor, setVendor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -19,7 +17,7 @@ export default function VendorMyProductsPage() {
 
   const CACHE_KEY_PRODUCTS = "d2k_vendor_products";
   const CACHE_KEY_VENDOR = "d2k_vendor_data";
-  const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12h
+  const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12 hours
 
   /* -------------------------------------------------------------------------- */
   /* 🧠 Load Cached Data + Fetch Fresh Data                                     */
@@ -30,19 +28,14 @@ export default function VendorMyProductsPage() {
     const cachedVendor = localStorage.getItem(CACHE_KEY_VENDOR);
     const cachedTime = localStorage.getItem(`${CACHE_KEY_PRODUCTS}_time`);
 
-    if (
-      cachedProducts &&
-      cachedTime &&
-      now - parseInt(cachedTime) < CACHE_EXPIRY_MS
-    ) {
+    if (cachedProducts && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
       setProducts(JSON.parse(cachedProducts));
       setLoading(false);
     }
 
     if (cachedVendor) setVendor(JSON.parse(cachedVendor));
 
-    // Always fetch fresh data in background
-    fetchProducts();
+    fetchProducts(); // Always fetch fresh data
   }, []);
 
   /* -------------------------------------------------------------------------- */
@@ -63,7 +56,7 @@ export default function VendorMyProductsPage() {
   }
 
   /* -------------------------------------------------------------------------- */
-  /* 🔁 Handle Manual Refresh                                                   */
+  /* 🔁 Manual Refresh                                                          */
   /* -------------------------------------------------------------------------- */
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -72,31 +65,25 @@ export default function VendorMyProductsPage() {
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 🖼️ Utility: Resolve Image URL                                              */
+  /* 🖼️ Image URL Normalizer                                                   */
   /* -------------------------------------------------------------------------- */
   const getImageUrl = (img?: string): string => {
     if (!img) return "/placeholder.png";
     const base = (process.env.NEXT_PUBLIC_STORAGE_URL || "").replace(/\/$/, "");
     if (img.startsWith("http")) return img;
-    if (/^(products|vendor_avatars)\//.test(img))
-      return `${base}/storage/${img}`;
+    if (/^(products|vendor_avatars)\//.test(img)) return `${base}/storage/${img}`;
     if (img.startsWith("/storage") || img.startsWith("storage"))
       return `${base}/${img.replace(/^\/?/, "")}`;
     return `${base}/storage/${img}`;
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 💠 Shimmer Loader (Product Grid Skeletons)                                 */
+  /* 💠 Shimmer Loader                                                         */
   /* -------------------------------------------------------------------------- */
   const ShimmerGrid = () => (
-    <div
-      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 px-3 py-5"
-    >
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4 px-3 py-5">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div
-          key={i}
-          className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 animate-pulse"
-        >
+        <div key={i} className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 animate-pulse">
           <div className="w-full h-[160px] bg-gray-200 rounded-md mb-3" />
           <div className="w-3/4 h-4 bg-gray-200 rounded mb-2" />
           <div className="w-1/2 h-3 bg-gray-100 rounded mb-2" />
@@ -108,7 +95,7 @@ export default function VendorMyProductsPage() {
   );
 
   /* -------------------------------------------------------------------------- */
-  /* ❤️ Handle Wishlist Toggle                                                 */
+  /* ❤️ Toggle Wishlist                                                        */
   /* -------------------------------------------------------------------------- */
   const toggleLike = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -133,9 +120,7 @@ export default function VendorMyProductsPage() {
           className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full text-gray-700 font-semibold text-[13px] hover:bg-gray-200 transition"
         >
           <RefreshCw
-            className={`w-4 h-4 ${
-              refreshing ? "animate-spin text-teal-600" : ""
-            }`}
+            className={`w-4 h-4 ${refreshing ? "animate-spin text-teal-600" : ""}`}
           />
           {refreshing ? "Refreshing..." : "Refresh"}
         </button>
@@ -172,11 +157,6 @@ export default function VendorMyProductsPage() {
                 product?.image ||
                 null;
               const image = getImageUrl(rawImg);
-              const attrValues =
-                product?.attribute_values
-                  ?.map((a: any) => a?.value)
-                  ?.filter(Boolean) || [];
-              const subcategory = product?.subcategory?.name || "";
               const newPrice = Number(product?.new_price || 0);
               const oldPrice = Number(product?.old_price || 0);
               const discount =
@@ -185,14 +165,13 @@ export default function VendorMyProductsPage() {
                   : 0;
               const rating = parseFloat(product?.average_rating || 0).toFixed(1);
               const reviewCount = product?.review_count || 0;
-
               const liked = likedIds.includes(product.id);
 
               return (
-                <Link
+                <div
                   key={product.id}
-                  href={`/vendor/products?id=${product.id}`}
-                  className="relative bg-white border border-gray-200 rounded-xl hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden flex flex-col group"
+                  onClick={() => router.push(`/vendor/products?id=${product.id}`)}
+                  className="relative bg-white border border-gray-200 rounded-xl hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden flex flex-col group active:scale-[0.98]"
                 >
                   {/* 🔹 Label */}
                   <div className="absolute top-2 left-2 bg-gray-800 text-white text-[11px] font-semibold px-2 py-0.5 rounded-md z-10">
@@ -272,7 +251,7 @@ export default function VendorMyProductsPage() {
                       </span>
                     </div>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>

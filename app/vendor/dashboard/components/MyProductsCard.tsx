@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation"; // ✅ added
 import { RefreshCw, ShoppingCart, Star, Heart } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -15,6 +16,7 @@ export default function MyProductsCard({
   loading,
   onRefresh,
 }: MyProductsCardProps) {
+  const router = useRouter(); // ✅ added for navigation
   const [refreshing, setRefreshing] = useState(false);
   const [cachedProducts, setCachedProducts] = useState<any[]>([]);
   const [likedProducts, setLikedProducts] = useState<number[]>([]);
@@ -147,6 +149,7 @@ export default function MyProductsCard({
             return (
               <div
                 key={product.id}
+                onClick={() => router.push(`/vendor/products?id=${product.id}`)} // ✅ Added navigation
                 className="relative bg-white border border-gray-200 rounded-xl hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col"
               >
                 {/* 🔹 Best Seller Tag */}
@@ -168,7 +171,9 @@ export default function MyProductsCard({
                 >
                   <Heart
                     size={16}
-                    className={liked ? "text-red-500 fill-red-500" : "text-gray-400"}
+                    className={
+                      liked ? "text-red-500 fill-red-500" : "text-gray-400"
+                    }
                   />
                 </button>
 
