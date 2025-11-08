@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation"; // ✅ added
+import { useRouter } from "next/navigation";
 import { RefreshCw, ShoppingCart, Star, Heart } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -16,7 +16,7 @@ export default function MyProductsCard({
   loading,
   onRefresh,
 }: MyProductsCardProps) {
-  const router = useRouter(); // ✅ added for navigation
+  const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [cachedProducts, setCachedProducts] = useState<any[]>([]);
   const [likedProducts, setLikedProducts] = useState<number[]>([]);
@@ -71,7 +71,7 @@ export default function MyProductsCard({
   /* ✨ Shimmer Loader                                                          */
   /* -------------------------------------------------------------------------- */
   const ShimmerGrid = () => (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4 px-5 py-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2 px-[4px] py-3">
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
@@ -105,7 +105,7 @@ export default function MyProductsCard({
   return (
     <div className="bg-[#F9FAFB] py-5 animate-fadeIn">
       {/* HEADER */}
-      <div className="flex justify-between items-center px-5 mb-5">
+      <div className="flex justify-between items-center px-3 mb-5">
         <h2 className="text-[18px] font-extrabold text-[#272B37]">
           My Products
         </h2>
@@ -128,7 +128,7 @@ export default function MyProductsCard({
       {loading ? (
         <ShimmerGrid />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4 px-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2 px-[4px]">
           {data.map((product) => {
             const rawImg =
               product?.images?.[0]?.image ||
@@ -149,7 +149,7 @@ export default function MyProductsCard({
             return (
               <div
                 key={product.id}
-                onClick={() => router.push(`/vendor/products?id=${product.id}`)} // ✅ Added navigation
+                onClick={() => router.push(`/vendor/products?id=${product.id}`)}
                 className="relative bg-white border border-gray-200 rounded-xl hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col"
               >
                 {/* 🔹 Best Seller Tag */}
