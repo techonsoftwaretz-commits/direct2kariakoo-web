@@ -23,8 +23,6 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
 
   const [avatar, setAvatar] = useState<File | null>(null);
   const [leseni, setLeseni] = useState<File | null>(null);
-  const [nidaDoc, setNidaDoc] = useState<File | null>(null);
-  const [useNidaNumber, setUseNidaNumber] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -36,7 +34,7 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*,.pdf";
-    if (useCamera) input.capture = "environment"; // open camera for scanning
+    if (useCamera) input.capture = "environment"; // open camera
     input.onchange = (e: any) => {
       const file = e.target.files[0];
       if (file) callback(file);
@@ -50,7 +48,7 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
     setError("");
     setSuccess("");
 
-    if (!form.firstName || !form.businessName || !avatar || !leseni) {
+    if (!form.firstName || !form.businessName || !avatar || !leseni || !form.nidaNumber) {
       setError("Please fill all required fields and upload required files.");
       return;
     }
@@ -60,9 +58,8 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       const payload: any = {
         ...form,
         avatar,
-        businessLicense: leseni,  // keep for naming
-        nidaDocument: nidaDoc,
-      };      
+        businessLicense: leseni,
+      };
 
       if (coordinates) {
         payload.latitude = coordinates.lat;
@@ -73,7 +70,6 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       console.log("✅ Vendor registered:", res);
 
       setSuccess("Vendor registered successfully!");
-      // Wait briefly for user to see success message, then redirect
       setTimeout(() => {
         router.push("/auth/login");
       }, 1500);
@@ -209,57 +205,13 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
           </div>
         </div>
 
-        {/* NIDA */}
-        {!useNidaNumber && (
-          <>
-            <div className="border rounded-lg p-3 flex justify-between items-center bg-white">
-              <span className="font-semibold text-sm">
-                {nidaDoc ? nidaDoc.name : "NIDA Document"}
-              </span>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => pickFile((f) => setNidaDoc(f))}
-                  className="text-yellow-600 text-sm underline"
-                >
-                  Upload
-                </button>
-                <button
-                  type="button"
-                  onClick={() => pickFile((f) => setNidaDoc(f), true)}
-                  className="text-green-600 text-sm underline"
-                >
-                  Scan
-                </button>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setUseNidaNumber(true)}
-              className="text-green-600 text-sm underline mt-1"
-            >
-              I don’t have a NIDA document
-            </button>
-          </>
-        )}
-
-        {useNidaNumber && (
-          <>
-            <InputCardField
-              label="NIDA Number (20 digits)"
-              placeholder="e.g. 12345678901234567890"
-              value={form.nidaNumber}
-              onChange={(v) => setForm({ ...form, nidaNumber: v })}
-            />
-            <button
-              type="button"
-              onClick={() => setUseNidaNumber(false)}
-              className="text-yellow-600 text-sm underline"
-            >
-              Back to NIDA document upload
-            </button>
-          </>
-        )}
+        {/* NIDA Number Only */}
+        <InputCardField
+          label="NIDA Number (20 digits) *"
+          placeholder="e.g. 12345678901234567890"
+          value={form.nidaNumber}
+          onChange={(v) => setForm({ ...form, nidaNumber: v })}
+        />
       </div>
 
       {/* Error & Success */}
