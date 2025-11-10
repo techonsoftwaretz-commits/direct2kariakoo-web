@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { RotateCcw, Calendar, Phone } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 Refund Tab — Cached + Shimmer + Smooth UX                               */
+/* 🌟 Refund Tab — Persistent Cache + Smooth UX + Background Refresh          */
 /* -------------------------------------------------------------------------- */
 export default function RefundTab() {
   const [refunds, setRefunds] = useState<any[]>([]);
@@ -13,34 +13,40 @@ export default function RefundTab() {
   const api = process.env.NEXT_PUBLIC_API_URL;
 
   const CACHE_KEY = "vendor_refunds";
-  const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+  const CACHE_TIME_KEY = `${CACHE_KEY}_time`;
+  const CACHE_EXPIRY_MS = 10 * 60 * 1000; // cache expires in 10 mins
 
   /* -------------------------------------------------------------------------- */
-  /* 🧠 Load Cached Data + Auto Refresh                                         */
+  /* ⚡ Load Cached Data Instantly + Auto Refresh                              */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cached = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
+    // ✅ Load cached data instantly if not expired
     if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      setRefunds(JSON.parse(cached));
-      setLoading(false);
+      try {
+        const parsed = JSON.parse(cached);
+        setRefunds(parsed);
+        setLoading(false);
+      } catch {}
     }
 
+    // ✅ Fetch fresh data silently in background
     fetchRefunds(false);
     const interval = setInterval(() => fetchRefunds(false), 60000);
     return () => clearInterval(interval);
   }, []);
 
   /* -------------------------------------------------------------------------- */
-  /* 🔁 Fetch Vendor Refund Orders                                              */
+  /* 📡 Fetch Vendor Refund Orders                                              */
   /* -------------------------------------------------------------------------- */
   const fetchRefunds = async (showLoader = true) => {
     try {
       if (showLoader) setRefreshing(true);
       const token = localStorage.getItem("token");
-      if (!token) return;
+      if (!token || !api) return;
 
       const res = await fetch(`${api}/vendor/orders`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -48,11 +54,15 @@ export default function RefundTab() {
       const data = await res.json();
       const allOrders = data.orders || [];
 
-      const refunded = allOrders.filter((o: any) => o.status === "refunded");
+      const refunded = allOrders.filter(
+        (o: any) => o.status?.toLowerCase() === "refunded"
+      );
+
       setRefunds(refunded);
 
+      // ✅ Save to cache
       localStorage.setItem(CACHE_KEY, JSON.stringify(refunded));
-      localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
+      localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
     } catch (err) {
       console.error("❌ Failed to fetch refund orders:", err);
     } finally {
@@ -151,7 +161,7 @@ export default function RefundTab() {
 
             {/* 📦 Refund Info */}
             <div className="flex-1 p-3 flex flex-col justify-between">
-              {/* Header Row */}
+              {/* Header */}
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-gray-900 text-[15px] line-clamp-1">
@@ -210,19 +220,17 @@ export default function RefundTab() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✨ Fade Animation (Global)                                                  */
+/* ✨ Fade Animation (Global Once)                                             */
 /* -------------------------------------------------------------------------- */
-if (typeof window !== "undefined") {
-  if (!document.getElementById("fadein-style")) {
-    const style = document.createElement("style");
-    style.id = "fadein-style";
-    style.innerHTML = `
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(6px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
-    `;
-    document.head.appendChild(style);
-  }
+if (typeof window !== "undefined" && !document.getElementById("fadein-style")) {
+  const style = document.createElement("style");
+  style.id = "fadein-style";
+  style.innerHTML = `
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
+  `;
+  document.head.appendChild(style);
 }

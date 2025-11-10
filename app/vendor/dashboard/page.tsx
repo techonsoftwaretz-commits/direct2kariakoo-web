@@ -12,7 +12,7 @@ import VendorBottomNav from "../VendorBottomNav";
 import { api } from "@/lib/api";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 Vendor Dashboard (Optimized + Shimmer + Cache)                          */
+/* 🌟 Vendor Dashboard (Persistent Cached Version)                            */
 /* -------------------------------------------------------------------------- */
 export default function VendorDashboard() {
   const [vendor, setVendor] = useState<any>(null);
@@ -25,18 +25,19 @@ export default function VendorDashboard() {
 
   const CACHE_KEY_VENDOR = "d2k_vendor_data";
   const CACHE_KEY_PRODUCTS = "d2k_vendor_products";
+  const CACHE_TIME_KEY = "d2k_vendor_cache_time";
   const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12h cache
 
   /* -------------------------------------------------------------------------- */
-  /* 🧠 Load Cached Data + Fetch Dashboard Data                                 */
+  /* 🧠 Load Cached Data First                                                  */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cachedVendor = localStorage.getItem(CACHE_KEY_VENDOR);
     const cachedProducts = localStorage.getItem(CACHE_KEY_PRODUCTS);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY_VENDOR}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
-    // ✅ Use cached data instantly if fresh
+    // ✅ Step 1: Use Cache Instantly if Exists and Valid
     if (
       cachedVendor &&
       cachedProducts &&
@@ -48,13 +49,14 @@ export default function VendorDashboard() {
       setVendor(vendorData);
       setProducts(productList);
       setFilteredProducts(productList);
-      setLoading(false);
+      setLoading(false); // skip shimmer
+    } else {
+      setLoading(true); // only shimmer when no cache
     }
 
-    // ✅ Always refresh background data
+    // ✅ Step 2: Background Refresh (non-blocking)
     const fetchDashboardData = async () => {
       try {
-        setError(null);
         const [meRes, dashboardRes, productsRes] = await Promise.all([
           api.get("/me"),
           api.get("/vendor/dashboard"),
@@ -75,28 +77,29 @@ export default function VendorDashboard() {
 
         localStorage.setItem(CACHE_KEY_VENDOR, JSON.stringify(vendorData));
         localStorage.setItem(CACHE_KEY_PRODUCTS, JSON.stringify(productList));
-        localStorage.setItem(`${CACHE_KEY_VENDOR}_time`, now.toString());
+        localStorage.setItem(CACHE_TIME_KEY, now.toString());
       } catch (err: any) {
         console.error("❌ Error fetching dashboard data:", err);
         if (err.response?.status === 401) {
           setError("Session expired. Please log in again.");
           localStorage.clear();
           window.location.href = "/frontend/auth/login";
-        } else if (err.response?.status === 404) {
-          setError("Data not found. Check your API routes.");
         } else {
-          setError("An unexpected error occurred. Please try again later.");
+          setError("Failed to refresh dashboard data.");
         }
       } finally {
         setLoading(false);
       }
     };
 
+    // Refresh data silently every 10 minutes
     fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 10 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   /* -------------------------------------------------------------------------- */
-  /* 🔍 Handle Search Logic (debounced + client-side)                           */
+  /* 🔍 Search (debounced)                                                     */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -112,8 +115,9 @@ export default function VendorDashboard() {
         const name = p?.name?.toLowerCase() || "";
         const sub = p?.subcategory?.name?.toLowerCase() || "";
         const attr =
-          p?.attribute_values?.map((a: any) => a?.value?.toLowerCase()).join(" ") ||
-          "";
+          p?.attribute_values
+            ?.map((a: any) => a?.value?.toLowerCase())
+            ?.join(" ") || "";
         return name.includes(q) || sub.includes(q) || attr.includes(q);
       });
 
@@ -125,7 +129,7 @@ export default function VendorDashboard() {
   }, [searchQuery, products]);
 
   /* -------------------------------------------------------------------------- */
-  /* ✨ Shimmer Loader for Dashboard Skeleton                                   */
+  /* ✨ Shimmer (only first load if no cache)                                   */
   /* -------------------------------------------------------------------------- */
   const DashboardShimmer = () => (
     <div className="animate-pulse space-y-6">
@@ -162,11 +166,10 @@ export default function VendorDashboard() {
           </div>
         )}
 
-        {loading ? (
+        {loading && !vendor ? (
           <DashboardShimmer />
         ) : (
           <>
-            {/* Welcome + Stats */}
             <WelcomeHeader vendor={vendor} />
             <StatsRow products={products} />
             <SalesCard />

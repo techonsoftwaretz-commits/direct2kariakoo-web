@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { RefreshCw, ShoppingCart, Star, Heart } from "lucide-react";
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 
 interface MyProductsCardProps {
   products: any[];
@@ -11,6 +12,9 @@ interface MyProductsCardProps {
   onRefresh?: () => void;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 🌟 MyProductsCard — Persistent Cache + Background Refresh + Wishlist        */
+/* -------------------------------------------------------------------------- */
 export default function MyProductsCard({
   products,
   loading,
@@ -20,42 +24,75 @@ export default function MyProductsCard({
   const [refreshing, setRefreshing] = useState(false);
   const [cachedProducts, setCachedProducts] = useState<any[]>([]);
   const [likedProducts, setLikedProducts] = useState<number[]>([]);
+  const [isLoading, setIsLoading] = useState(loading);
 
   const CACHE_KEY_PRODUCTS = "d2k_vendor_products";
+  const CACHE_TIME_KEY = "d2k_vendor_products_time";
   const CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000; // 12h cache
 
   /* -------------------------------------------------------------------------- */
-  /* 🧠 Load Cached Products                                                    */
+  /* 🧠 Load Cached Products Instantly + Silent Background Refresh              */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     try {
       const now = Date.now();
       const cached = localStorage.getItem(CACHE_KEY_PRODUCTS);
-      const cachedTime = localStorage.getItem(`${CACHE_KEY_PRODUCTS}_time`);
+      const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
       if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
         setCachedProducts(JSON.parse(cached));
-      } else {
-        localStorage.removeItem(CACHE_KEY_PRODUCTS);
-        localStorage.removeItem(`${CACHE_KEY_PRODUCTS}_time`);
+        setIsLoading(false); // skip shimmer on reload
       }
+
+      // ✅ Silent refresh every 15 minutes
+      refreshProducts(false);
+      const interval = setInterval(() => refreshProducts(false), 15 * 60 * 1000);
+      return () => clearInterval(interval);
     } catch (err) {
       console.warn("Cache read failed:", err);
     }
   }, []);
 
   /* -------------------------------------------------------------------------- */
-  /* 🔁 Handle Refresh Button                                                   */
+  /* 📡 Refresh from API (with optional shimmer)                                */
+  /* -------------------------------------------------------------------------- */
+  const refreshProducts = async (showLoading = false) => {
+    if (showLoading) setIsLoading(true);
+    try {
+      const res = await api.get("/products");
+      const productList = res.data?.products || [];
+
+      setCachedProducts(productList);
+      setIsLoading(false);
+
+      localStorage.setItem(CACHE_KEY_PRODUCTS, JSON.stringify(productList));
+      localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+    } catch (err) {
+      console.error("❌ Failed to refresh products:", err);
+      setIsLoading(false);
+    }
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* 🔁 Manual Refresh Button                                                   */
   /* -------------------------------------------------------------------------- */
   const handleRefresh = async () => {
-    if (!onRefresh) return;
     setRefreshing(true);
-    await onRefresh();
+    await refreshProducts(true);
     setTimeout(() => setRefreshing(false), 800);
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 🖼️ Normalize Image URL                                                   */
+  /* ❤️ Toggle Wishlist                                                        */
+  /* -------------------------------------------------------------------------- */
+  const toggleLike = (id: number) => {
+    setLikedProducts((prev) =>
+      prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id]
+    );
+  };
+
+  /* -------------------------------------------------------------------------- */
+  /* 🖼️ Normalize Image URL                                                    */
   /* -------------------------------------------------------------------------- */
   const getImageUrl = (img?: string): string => {
     if (!img) return "/placeholder.png";
@@ -89,7 +126,7 @@ export default function MyProductsCard({
   /* -------------------------------------------------------------------------- */
   /* 🚫 Empty State                                                             */
   /* -------------------------------------------------------------------------- */
-  if (!loading && (!products || products.length === 0)) {
+  if (!isLoading && (!cachedProducts || cachedProducts.length === 0)) {
     return (
       <div className="flex justify-center py-12 text-gray-400">
         No products found.
@@ -100,7 +137,8 @@ export default function MyProductsCard({
   /* -------------------------------------------------------------------------- */
   /* 🧩 Render Product Grid                                                     */
   /* -------------------------------------------------------------------------- */
-  const data = products && products.length > 0 ? products : cachedProducts;
+  const data =
+    products && products.length > 0 ? products : cachedProducts || [];
 
   return (
     <div className="bg-[#F9FAFB] py-5 animate-fadeIn">
@@ -125,7 +163,7 @@ export default function MyProductsCard({
       </div>
 
       {/* GRID */}
-      {loading ? (
+      {isLoading ? (
         <ShimmerGrid />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2 px-[4px]">
@@ -161,11 +199,7 @@ export default function MyProductsCard({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setLikedProducts((prev) =>
-                      liked
-                        ? prev.filter((id) => id !== product.id)
-                        : [...prev, product.id]
-                    );
+                    toggleLike(product.id);
                   }}
                   className="absolute top-2 right-2 bg-white rounded-full shadow-md p-1.5 z-10 hover:scale-105 transition"
                 >

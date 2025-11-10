@@ -3,43 +3,71 @@
 import { useEffect, useState } from "react";
 import { Zap } from "lucide-react";
 import Link from "next/link";
+import { api } from "@/lib/api";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 SalesCard — Light Yellow Minimal Theme + Cache + Shimmer + FadeIn       */
+/* 🌟 SalesCard — Persistent Cache + Background Refresh + Shimmer Once        */
 /* -------------------------------------------------------------------------- */
 export default function SalesCard() {
   const [plan, setPlan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const CACHE_KEY = "vendor_plan_cache";
+  const CACHE_TIME_KEY = "vendor_plan_cache_time";
   const CACHE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
   /* -------------------------------------------------------------------------- */
-  /* ⚡ Load Cached Data + Silent Refresh                                       */
+  /* ⚡ Load Cached Plan Instantly + Silent Background Refresh                  */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cached = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
+    // ✅ Use cache instantly
     if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      setPlan(JSON.parse(cached));
-      setLoading(false);
+      try {
+        setPlan(JSON.parse(cached));
+        setLoading(false);
+      } catch {}
     }
 
-    // Simulated fetch (replace with API call)
-    setTimeout(() => {
+    // ✅ Always refresh silently
+    fetchPlan(false);
+
+    // ✅ Auto-refresh every 10 min silently
+    const interval = setInterval(() => fetchPlan(false), 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  /* -------------------------------------------------------------------------- */
+  /* 📡 Fetch Vendor Plan (API or Simulation)                                   */
+  /* -------------------------------------------------------------------------- */
+  const fetchPlan = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    try {
+      // 🔹 Replace with your real endpoint when ready
+      // const res = await api.get("/vendor/plan");
+      // const data = res.data?.plan || res.data || null;
+
+      // 🔹 Simulated example (offline mode)
       const data = {
         name: "Pro Plan",
         uploadLimit: 500,
         expiry: "2025-09-30",
       };
-      setPlan(data);
+
+      if (data) {
+        setPlan(data);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+      }
+    } catch (err) {
+      console.error("❌ Failed to fetch plan:", err);
+    } finally {
       setLoading(false);
-      localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-      localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
-    }, 400);
-  }, []);
+    }
+  };
 
   /* -------------------------------------------------------------------------- */
   /* ✨ Shimmer Loader                                                          */
@@ -64,7 +92,7 @@ export default function SalesCard() {
   /* -------------------------------------------------------------------------- */
   /* 🧱 Render                                                                 */
   /* -------------------------------------------------------------------------- */
-  if (loading || !plan) return <ShimmerCard />;
+  if (loading && !plan) return <ShimmerCard />;
 
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm mb-4 border border-gray-100 animate-fadeIn">
@@ -78,18 +106,20 @@ export default function SalesCard() {
             Current Package
           </h2>
         </div>
-        <span className="text-teal-700 font-semibold text-lg">{plan.name}</span>
+        <span className="text-teal-700 font-semibold text-lg">
+          {plan?.name || "—"}
+        </span>
       </div>
 
       {/* Details */}
       <div className="space-y-1.5 text-sm">
         <p className="text-gray-700">
           <span className="font-medium text-gray-900">Upload Limit:</span>{" "}
-          {plan.uploadLimit.toLocaleString()} times
+          {plan?.uploadLimit?.toLocaleString() || 0} times
         </p>
         <p className="text-gray-500">
           <span className="font-medium text-gray-900">Expires:</span>{" "}
-          {plan.expiry}
+          {plan?.expiry || "—"}
         </p>
       </div>
 

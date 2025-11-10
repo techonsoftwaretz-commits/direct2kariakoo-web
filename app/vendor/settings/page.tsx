@@ -16,7 +16,7 @@ import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 Vendor Settings Page — Cached + Shimmer + Polished UI                   */
+/* 🌟 Vendor Settings Page — Persistent Cache + Background Refresh            */
 /* -------------------------------------------------------------------------- */
 export default function VendorSettingsPage() {
   const [showDialog, setShowDialog] = useState(false);
@@ -26,54 +26,74 @@ export default function VendorSettingsPage() {
   const router = useRouter();
 
   const CACHE_KEY = "vendor_settings_cache";
-  const CACHE_EXPIRY_MS = 5 * 60 * 1000;
+  const CACHE_TIME_KEY = `${CACHE_KEY}_time`;
+  const CACHE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
   /* -------------------------------------------------------------------------- */
-  /* 🧠 Load Vendor From Cache / Fetch                                          */
+  /* ⚡ Load Cached Vendor Instantly + Silent Refresh                           */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cached = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
     if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      setVendor(JSON.parse(cached));
-      setLoading(false);
+      try {
+        setVendor(JSON.parse(cached));
+        setLoading(false);
+      } catch {}
     }
 
-    fetchVendor();
+    fetchVendor(false);
+    const interval = setInterval(() => fetchVendor(false), 10 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  async function fetchVendor() {
+  /* -------------------------------------------------------------------------- */
+  /* 📡 Fetch Vendor (with optional shimmer)                                   */
+  /* -------------------------------------------------------------------------- */
+  async function fetchVendor(showLoading = true) {
+    if (showLoading) setLoading(true);
     try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        router.push("/auth/login");
+        return;
+      }
+
       const storedVendor = localStorage.getItem("vendor");
       if (storedVendor) {
         const parsed = JSON.parse(storedVendor);
         setVendor(parsed);
         localStorage.setItem(CACHE_KEY, JSON.stringify(parsed));
-        localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
+        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
       } else {
         const res = await api.get("/me");
-        setVendor(res.data.user?.vendor || res.data.vendor);
+        const data = res.data.user?.vendor || res.data.vendor || res.data;
+        if (data) {
+          setVendor(data);
+          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+          localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+        }
       }
     } catch (err) {
-      console.error("Failed to load vendor:", err);
+      console.error("❌ Failed to fetch vendor:", err);
     } finally {
       setLoading(false);
     }
   }
 
   /* -------------------------------------------------------------------------- */
-  /* 🚪 Logout                                                                  */
+  /* 🚪 Logout Handler                                                         */
   /* -------------------------------------------------------------------------- */
   const handleLogout = async () => {
     try {
       setLoggingOut(true);
       await api.post("/logout").catch(() => {});
     } finally {
-      localStorage.removeItem("vendor");
-      localStorage.removeItem("token");
-      localStorage.removeItem(CACHE_KEY);
+      ["vendor", "token", CACHE_KEY, CACHE_TIME_KEY].forEach((k) =>
+        localStorage.removeItem(k)
+      );
       alert("You have been logged out!");
       router.push("/auth/login");
     }
@@ -96,7 +116,7 @@ export default function VendorSettingsPage() {
   );
 
   /* -------------------------------------------------------------------------- */
-  /* 💫 Render                                                                 */
+  /* 🧱 Render Page                                                            */
   /* -------------------------------------------------------------------------- */
   if (loading)
     return (
@@ -250,15 +270,15 @@ function LogoutDialog({
 }
 
 /* -------------------------------------------------------------------------- */
-/* 🎬 Fade Animation                                                          */
+/* 🎬 Fade Animation (Global once)                                            */
 /* -------------------------------------------------------------------------- */
 if (typeof window !== "undefined" && !document.getElementById("fadein-style")) {
   const style = document.createElement("style");
   style.id = "fadein-style";
   style.innerHTML = `
-    @keyframes fadeIn { 
-      from { opacity: 0; transform: translateY(8px); } 
-      to { opacity: 1; transform: translateY(0); } 
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
   `;

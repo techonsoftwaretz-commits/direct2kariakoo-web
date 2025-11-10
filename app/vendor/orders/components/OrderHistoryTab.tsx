@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Calendar, Phone, BarChart3 } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 Vendor Order History — Cached + Shimmer + Smooth UX                     */
+/* 🌟 Vendor Order History — Persistent Cache + Background Refresh            */
 /* -------------------------------------------------------------------------- */
 export default function OrderHistoryTab() {
   const [history, setHistory] = useState<any[]>([]);
@@ -14,20 +14,24 @@ export default function OrderHistoryTab() {
   const api = process.env.NEXT_PUBLIC_API_URL;
 
   const CACHE_KEY = "vendor_order_history";
-  const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 min
+  const CACHE_TIME_KEY = `${CACHE_KEY}_time`;
+  const CACHE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
   /* -------------------------------------------------------------------------- */
-  /* 🧠 Load Cached History + Fetch                                             */
+  /* ⚡ Load Cached Data Instantly + Silent Refresh                             */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cached = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
+
     if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      const parsed = JSON.parse(cached);
-      setHistory(parsed.history);
-      setTotalSales(parsed.totalSales);
-      setLoading(false);
+      try {
+        const parsed = JSON.parse(cached);
+        setHistory(parsed.history || []);
+        setTotalSales(parsed.totalSales || 0);
+        setLoading(false);
+      } catch {}
     }
 
     fetchHistory(false);
@@ -36,13 +40,13 @@ export default function OrderHistoryTab() {
   }, []);
 
   /* -------------------------------------------------------------------------- */
-  /* 📦 Fetch Vendor Order History                                              */
+  /* 📡 Fetch Vendor Order History                                              */
   /* -------------------------------------------------------------------------- */
   const fetchHistory = async (showLoader = true) => {
     try {
       if (showLoader) setRefreshing(true);
       const token = localStorage.getItem("token");
-      if (!token) return;
+      if (!token || !api) return;
 
       const res = await fetch(`${api}/vendor/orders`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -50,7 +54,9 @@ export default function OrderHistoryTab() {
       const data = await res.json();
       const allOrders = data.orders || [];
 
-      const completed = allOrders.filter((o: any) => o.status === "completed");
+      const completed = allOrders.filter(
+        (o: any) => o.status?.toLowerCase() === "completed"
+      );
       setHistory(completed);
 
       const total = completed.reduce(
@@ -59,11 +65,12 @@ export default function OrderHistoryTab() {
       );
       setTotalSales(total);
 
+      // ✅ Cache
       localStorage.setItem(
         CACHE_KEY,
         JSON.stringify({ history: completed, totalSales: total })
       );
-      localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
+      localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
     } catch (err) {
       console.error("❌ Failed to fetch vendor order history:", err);
     } finally {
@@ -73,7 +80,7 @@ export default function OrderHistoryTab() {
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 💰 Format Money Helper                                                    */
+  /* 💰 Format Helper                                                          */
   /* -------------------------------------------------------------------------- */
   const formatMoney = (value: number): string =>
     value.toLocaleString("en-US", {
@@ -177,7 +184,6 @@ export default function OrderHistoryTab() {
 
             {/* 📦 Order Info */}
             <div className="flex-1 p-3 flex flex-col justify-between">
-              {/* Header */}
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-gray-900 text-[15px] line-clamp-1">
@@ -203,7 +209,6 @@ export default function OrderHistoryTab() {
                 </span>
               </div>
 
-              {/* 🕓 Date + Total */}
               <div className="flex justify-between items-center mt-2">
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                   <Calendar className="w-3.5 h-3.5" />
@@ -223,19 +228,17 @@ export default function OrderHistoryTab() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* ✨ Fade Animation (Global)                                                  */
+/* ✨ Fade Animation (Global once)                                             */
 /* -------------------------------------------------------------------------- */
-if (typeof window !== "undefined") {
-  if (!document.getElementById("fadein-style")) {
-    const style = document.createElement("style");
-    style.id = "fadein-style";
-    style.innerHTML = `
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(6px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
-    `;
-    document.head.appendChild(style);
-  }
+if (typeof window !== "undefined" && !document.getElementById("fadein-style")) {
+  const style = document.createElement("style");
+  style.id = "fadein-style";
+  style.innerHTML = `
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
+  `;
+  document.head.appendChild(style);
 }

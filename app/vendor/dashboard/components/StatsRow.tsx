@@ -5,7 +5,7 @@ import { Package, Star, ShoppingBag, BarChart } from "lucide-react";
 import { api } from "@/lib/api";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 StatsRow — Modern Grey Aesthetic | Cached | Shimmer | Subtle Accent      */
+/* 🌟 StatsRow — Persistent Cache + Background Refresh + Shimmer Once         */
 /* -------------------------------------------------------------------------- */
 interface Stats {
   totalProducts: number;
@@ -19,28 +19,36 @@ export default function StatsRow({ products }: { products: any[] }) {
   const [loading, setLoading] = useState(true);
 
   const CACHE_KEY_STATS = "d2k_vendor_stats";
+  const CACHE_TIME_KEY = "d2k_vendor_stats_time";
   const CACHE_EXPIRY_MS = 30 * 60 * 1000; // 30 min
 
   /* -------------------------------------------------------------------------- */
-  /* ⚡ Load Cached Stats + Silent Refresh                                      */
+  /* ⚡ Load Cached Stats Instantly + Silent Background Refresh                 */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cachedStats = localStorage.getItem(CACHE_KEY_STATS);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY_STATS}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
+    // ✅ Use cached data instantly if available
     if (cachedStats && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
       setStats(JSON.parse(cachedStats));
-      setLoading(false);
+      setLoading(false); // skip shimmer
     }
 
-    fetchStats();
+    // ✅ Always refresh in background without flicker
+    fetchStats(false);
+
+    // ✅ Auto-refresh every 15 min silently
+    const interval = setInterval(() => fetchStats(true), 15 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [products]);
 
   /* -------------------------------------------------------------------------- */
-  /* 📊 Fetch Stats                                                             */
+  /* 📊 Fetch Stats + Optional Loading Indicator                                */
   /* -------------------------------------------------------------------------- */
-  const fetchStats = async () => {
+  const fetchStats = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const [ordersRes, productsRes] = await Promise.all([
         api.get("/vendor/orders"),
@@ -50,7 +58,10 @@ export default function StatsRow({ products }: { products: any[] }) {
       const orders: any[] = ordersRes.data?.orders || [];
       const productList: any[] = productsRes.data?.products || [];
 
-      const completedOrders = orders.filter((o) => o.status === "completed");
+      const completedOrders = orders.filter((o) =>
+        o.status?.toLowerCase().includes("completed")
+      );
+
       const totalSales = completedOrders.reduce(
         (sum: number, o: any) => sum + (Number(o.total) || 0),
         0
@@ -80,8 +91,9 @@ export default function StatsRow({ products }: { products: any[] }) {
       setStats(newStats);
       setLoading(false);
 
+      // ✅ Save cache for persistence
       localStorage.setItem(CACHE_KEY_STATS, JSON.stringify(newStats));
-      localStorage.setItem(`${CACHE_KEY_STATS}_time`, Date.now().toString());
+      localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
     } catch (err) {
       console.error("❌ Failed to load stats:", err);
       setLoading(false);
@@ -97,15 +109,13 @@ export default function StatsRow({ products }: { products: any[] }) {
       maximumFractionDigits: 2,
     });
 
-  const shimmerItems = Array(4).fill(null);
-
   /* -------------------------------------------------------------------------- */
-  /* ✨ Shimmer Loader                                                          */
+  /* ✨ Shimmer Loader (first-time only)                                        */
   /* -------------------------------------------------------------------------- */
-  if (loading)
+  if (loading && !stats)
     return (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 animate-fadeIn">
-        {shimmerItems.map((_, i) => (
+        {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
             className="bg-gray-50 rounded-2xl border border-gray-100 py-5 flex flex-col items-center justify-center shadow-sm animate-pulse"

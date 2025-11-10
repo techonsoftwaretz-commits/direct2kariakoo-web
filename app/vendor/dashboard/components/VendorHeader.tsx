@@ -5,9 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Bell, Home, Package, MessageSquare, Settings, Menu, X } from "lucide-react";
+import { api } from "@/lib/api";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 Vendor Header — Direct2Kariakoo Brand (Yellow + Teal)                   */
+/* 🌟 Vendor Header — Persistent Cache + Background Refresh + Silent Update   */
 /* -------------------------------------------------------------------------- */
 export default function VendorHeader({ vendor: propVendor }: { vendor?: any }) {
   const router = useRouter();
@@ -17,33 +18,70 @@ export default function VendorHeader({ vendor: propVendor }: { vendor?: any }) {
   const [showMenu, setShowMenu] = useState(false);
 
   const CACHE_KEY = "vendor_header_cache";
-  const CACHE_EXPIRY_MS = 5 * 60 * 1000;
+  const CACHE_TIME_KEY = "vendor_header_cache_time";
+  const CACHE_EXPIRY_MS = 10 * 60 * 1000; // 10 min cache
 
   /* -------------------------------------------------------------------------- */
-  /* ⚡ Load Vendor (Cache + Silent Refresh)                                   */
+  /* ⚡ Load Cached Vendor + Silent Refresh                                    */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cached = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
+    // ✅ Use cached vendor instantly if valid
     if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      setVendor(JSON.parse(cached));
-      setLoading(false);
+      try {
+        const parsed = JSON.parse(cached);
+        setVendor(parsed);
+        setLoading(false);
+      } catch {}
     }
 
+    // ✅ Fallback to stored vendor if exists
     const stored = localStorage.getItem("vendor");
-    if (stored) {
+    if (!vendor && stored) {
       try {
         const parsed = JSON.parse(stored);
         setVendor(parsed);
         localStorage.setItem(CACHE_KEY, JSON.stringify(parsed));
-        localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
+        localStorage.setItem(CACHE_TIME_KEY, now.toString());
+        setLoading(false);
       } catch {}
     }
 
-    setLoading(false);
+    // ✅ Always refresh silently in background
+    fetchVendor();
+
+    // ✅ Auto-refresh every 10 minutes silently
+    const interval = setInterval(fetchVendor, 10 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
+
+  /* -------------------------------------------------------------------------- */
+  /* 📡 Fetch Vendor (Background)                                              */
+  /* -------------------------------------------------------------------------- */
+  const fetchVendor = async () => {
+    try {
+      const res = await api.get("/me");
+      const data =
+        res.data?.vendor ||
+        res.data?.user?.vendor ||
+        res.data?.user ||
+        res.data ||
+        null;
+
+      if (data) {
+        setVendor(data);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+      }
+    } catch (err) {
+      console.error("❌ Failed to refresh vendor:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /* -------------------------------------------------------------------------- */
   /* ✨ Shimmer Loader                                                         */
@@ -70,10 +108,10 @@ export default function VendorHeader({ vendor: propVendor }: { vendor?: any }) {
   /* -------------------------------------------------------------------------- */
   /* 🧱 Render                                                                 */
   /* -------------------------------------------------------------------------- */
-  if (loading) return <HeaderShimmer />;
+  if (loading && !vendor) return <HeaderShimmer />;
 
   return (
-    <header className="w-full sticky top-0 z-50 animate-fadeIn">
+    <header className="w-full sticky top-0 z-[9999] animate-fadeIn">
       {/* 🌟 Yellow Top Bar */}
       <div className="bg-[#FFD43B] flex items-center justify-between px-4 md:px-10 py-3 shadow-sm">
         {/* Left: Logo */}
@@ -96,7 +134,10 @@ export default function VendorHeader({ vendor: propVendor }: { vendor?: any }) {
         </div>
 
         {/* Right: Notification */}
-        <div className="relative cursor-pointer hover:scale-105 transition">
+        <div
+          className="relative cursor-pointer hover:scale-105 transition"
+          onClick={() => router.push("/vendor/notifications")}
+        >
           <Bell className="w-6 h-6 text-gray-900" />
           <span className="absolute -top-1 -right-1 w-4 h-4 bg-teal-600 text-white text-[10px] flex items-center justify-center rounded-full font-semibold">
             0

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
-/* 🌟 Active Orders Tab — Cached + Shimmer + Smooth UX                         */
+/* 🌟 Active Orders Tab — Persistent Cache + Silent Refresh + Smooth UX       */
 /* -------------------------------------------------------------------------- */
 export default function ActiveOrdersTab() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -21,34 +21,38 @@ export default function ActiveOrdersTab() {
   const api = process.env.NEXT_PUBLIC_API_URL;
 
   const CACHE_KEY = "vendor_active_orders";
-  const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+  const CACHE_TIME_KEY = `${CACHE_KEY}_time`;
+  const CACHE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
   /* -------------------------------------------------------------------------- */
-  /* 🧠 Load Cached + Auto-Fetch                                                */
+  /* ⚡ Load Cached Orders Instantly + Background Refresh                       */
   /* -------------------------------------------------------------------------- */
   useEffect(() => {
     const now = Date.now();
     const cached = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(`${CACHE_KEY}_time`);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
 
+    // ✅ Load cached orders instantly
     if (cached && cachedTime && now - parseInt(cachedTime) < CACHE_EXPIRY_MS) {
-      setOrders(JSON.parse(cached));
-      setLoading(false);
+      try {
+        setOrders(JSON.parse(cached));
+        setLoading(false);
+      } catch {}
     }
 
-    fetchOrders(false);
-    const interval = setInterval(() => fetchOrders(false), 45000); // every 45 s
+    fetchOrders(false); // silent refresh
+    const interval = setInterval(() => fetchOrders(false), 45000);
     return () => clearInterval(interval);
   }, []);
 
   /* -------------------------------------------------------------------------- */
-  /* 🔁 Fetch Vendor Active Orders                                              */
+  /* 📡 Fetch Vendor Active Orders                                              */
   /* -------------------------------------------------------------------------- */
   const fetchOrders = async (showLoader = true) => {
     try {
       if (showLoader) setRefreshing(true);
       const token = localStorage.getItem("token");
-      if (!token) return;
+      if (!token || !api) return;
 
       const res = await fetch(`${api}/vendor/orders`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -58,14 +62,13 @@ export default function ActiveOrdersTab() {
 
       const active = allOrders.filter(
         (o: any) =>
-          o.status === "pending" ||
-          o.status === "paid" ||
-          o.status === "processing"
+          ["pending", "paid", "processing"].includes(o.status?.toLowerCase())
       );
 
+      // ✅ Update state + cache
       setOrders(active);
       localStorage.setItem(CACHE_KEY, JSON.stringify(active));
-      localStorage.setItem(`${CACHE_KEY}_time`, Date.now().toString());
+      localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
     } catch (err) {
       console.error("❌ Failed to fetch vendor orders:", err);
     } finally {
@@ -75,7 +78,7 @@ export default function ActiveOrdersTab() {
   };
 
   /* -------------------------------------------------------------------------- */
-  /* 🔘 Handle Vendor Actions                                                   */
+  /* 🔘 Handle Vendor Order Actions (Optimistic Updates + Cache Sync)          */
   /* -------------------------------------------------------------------------- */
   const handleAction = async (
     id: number,
@@ -85,14 +88,7 @@ export default function ActiveOrdersTab() {
       const token = localStorage.getItem("token");
       if (!token) return alert("Login required.");
 
-      const res = await fetch(`${api}/vendor/orders/${id}/${action}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-
-      if (!res.ok) return alert(data.message || "Action failed");
-
+      // ✅ Optimistic UI update first
       setOrders((prev) =>
         prev
           .map((o) =>
@@ -119,7 +115,22 @@ export default function ActiveOrdersTab() {
           )
       );
 
-      alert(data.message);
+      // ✅ Save new state to cache immediately
+      setTimeout(
+        () =>
+          localStorage.setItem(CACHE_KEY, JSON.stringify(orders.filter((o) => o.id !== id))),
+        300
+      );
+
+      // ✅ Send API request in background
+      const res = await fetch(`${api}/vendor/orders/${id}/${action}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+
+      if (!res.ok) return alert(data.message || "Action failed");
+      alert(data.message || "Action successful");
     } catch (err) {
       console.error("❌ Failed to update order:", err);
       alert("Something went wrong.");
@@ -219,7 +230,6 @@ export default function ActiveOrdersTab() {
 
             {/* 📦 Order Info */}
             <div className="flex-1 p-3 flex flex-col justify-between">
-              {/* Header */}
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-gray-900 text-[15px] line-clamp-1">
@@ -243,7 +253,7 @@ export default function ActiveOrdersTab() {
                   className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${
                     order.status === "processing"
                       ? "bg-blue-100 text-blue-700"
-                      : order.status === "pending" || order.status === "paid"
+                      : ["pending", "paid"].includes(order.status)
                       ? "bg-yellow-100 text-yellow-700"
                       : "bg-gray-100 text-gray-700"
                   }`}
@@ -283,7 +293,7 @@ export default function ActiveOrdersTab() {
 
               {/* 🔘 Action Buttons */}
               <div className="mt-3 grid grid-cols-3 gap-2">
-                {order.status === "pending" || order.status === "paid" ? (
+                {["pending", "paid"].includes(order.status) ? (
                   <>
                     <button
                       onClick={() => handleAction(order.id, "approve")}
@@ -291,14 +301,12 @@ export default function ActiveOrdersTab() {
                     >
                       <PackageCheck className="w-4 h-4" /> Accept
                     </button>
-
                     <button
                       onClick={() => handleAction(order.id, "cancel")}
                       className="flex items-center justify-center gap-1 bg-gray-100 border border-gray-300 text-xs py-2 rounded-lg font-medium text-gray-800 hover:bg-gray-200 transition"
                     >
                       <XCircle className="w-4 h-4 text-gray-600" /> Cancel
                     </button>
-
                     <button
                       onClick={() => handleAction(order.id, "refund")}
                       className="flex items-center justify-center gap-1 bg-yellow-50 border border-yellow-300 text-xs py-2 rounded-lg font-medium text-yellow-700 hover:bg-yellow-100 transition"
@@ -314,14 +322,12 @@ export default function ActiveOrdersTab() {
                     >
                       <CheckCircle2 className="w-4 h-4" /> Complete
                     </button>
-
                     <button
                       onClick={() => handleAction(order.id, "cancel")}
                       className="flex items-center justify-center gap-1 bg-gray-100 border border-gray-300 text-xs py-2 rounded-lg font-medium text-gray-800 hover:bg-gray-200 transition"
                     >
                       <XCircle className="w-4 h-4 text-gray-600" /> Cancel
                     </button>
-
                     <button
                       onClick={() => handleAction(order.id, "refund")}
                       className="flex items-center justify-center gap-1 bg-yellow-50 border border-yellow-300 text-xs py-2 rounded-lg font-medium text-yellow-700 hover:bg-yellow-100 transition"
@@ -342,17 +348,15 @@ export default function ActiveOrdersTab() {
 /* -------------------------------------------------------------------------- */
 /* ✨ Fade Animation (Global)                                                  */
 /* -------------------------------------------------------------------------- */
-if (typeof window !== "undefined") {
-  if (!document.getElementById("fadein-style")) {
-    const style = document.createElement("style");
-    style.id = "fadein-style";
-    style.innerHTML = `
-      @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(6px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-      .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
-    `;
-    document.head.appendChild(style);
-  }
+if (typeof window !== "undefined" && !document.getElementById("fadein-style")) {
+  const style = document.createElement("style");
+  style.id = "fadein-style";
+  style.innerHTML = `
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fadeIn { animation: fadeIn .3s ease-in-out; }
+  `;
+  document.head.appendChild(style);
 }
