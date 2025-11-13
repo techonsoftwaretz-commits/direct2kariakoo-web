@@ -23,13 +23,11 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
 
   const [avatar, setAvatar] = useState<File | null>(null);
   const [leseni, setLeseni] = useState<File | null>(null);
-  const [nidaDocument, setNidaDocument] = useState<File | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showMap, setShowMap] = useState(false);
-  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
 
   // ------------------- FILE PICKER -------------------
   function pickFile(callback: (f: File) => void, useCamera = false) {
@@ -50,22 +48,22 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
     setError("");
     setSuccess("");
 
-    // Basic check
+    // Required fields
     if (!form.firstName || !form.businessName || !avatar || !leseni) {
       setError("Please fill all required fields and upload required files.");
       return;
     }
 
-    // NIDA: must provide either number or file
-    if (!form.nidaNumber && !nidaDocument) {
-      setError("Please provide either NIDA number or NIDA document.");
+    // NIDA number must be provided
+    if (!form.nidaNumber) {
+      setError("Please enter NIDA number (20 digits).");
       return;
     }
 
     // Prepare FormData
     const payload = new FormData();
 
-    payload.append("name", form.firstName + " " + form.lastName);
+    payload.append("name", `${form.firstName} ${form.lastName}`);
     payload.append("email", form.email);
     payload.append("password", form.password);
     payload.append("password_confirmation", form.password);
@@ -78,18 +76,7 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
     payload.append("avatar", avatar);
     payload.append("business_license", leseni);
 
-    if (form.nidaNumber) {
-      payload.append("nida_number", form.nidaNumber);
-    }
-
-    if (nidaDocument) {
-      payload.append("nida_document", nidaDocument);
-    }
-
-    if (coordinates) {
-      payload.append("latitude", String(coordinates.lat));
-      payload.append("longitude", String(coordinates.lng));
-    }
+    payload.append("nida_number", form.nidaNumber);
 
     setLoading(true);
     try {
@@ -103,7 +90,6 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       }, 1500);
 
       if (onSuccess) onSuccess();
-
     } catch (err: any) {
       console.log(err);
       setError(err.response?.data?.message || "Vendor registration failed.");
@@ -203,7 +189,7 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
         {/* Business License */}
         <div className="border rounded-lg p-3 flex justify-between items-center bg-white">
           <span className="font-semibold text-sm">
-            {leseni ? leseni.name : "Leseni ya Biashara *"}
+            {leseni ? leseni.name : "Business License *"}
           </span>
           <div className="flex gap-3">
             <button type="button" onClick={() => pickFile((f) => setLeseni(f))} className="text-yellow-600 text-sm underline">
@@ -215,28 +201,13 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
           </div>
         </div>
 
-        {/* NIDA Number OR Document */}
+        {/* NIDA Number ONLY */}
         <InputCardField
-          label="NIDA Number (20 digits)"
+          label="NIDA Number (20 digits) *"
           placeholder="e.g. 12345678901234567890"
           value={form.nidaNumber}
           onChange={(v) => setForm({ ...form, nidaNumber: v })}
         />
-
-        <div className="border rounded-lg p-3 flex justify-between items-center bg-white">
-          <span className="font-semibold text-sm">
-            {nidaDocument ? nidaDocument.name : "NIDA Document (Optional)"}
-          </span>
-          <div className="flex gap-3">
-            <button type="button" onClick={() => pickFile((f) => setNidaDocument(f))} className="text-yellow-600 text-sm underline">
-              Upload
-            </button>
-            <button type="button" onClick={() => pickFile((f) => setNidaDocument(f), true)} className="text-green-600 text-sm underline">
-              Scan
-            </button>
-          </div>
-        </div>
-
       </div>
 
       {/* Error & Success */}
@@ -258,9 +229,8 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
           <div className="bg-white rounded-lg shadow-xl p-4 w-[90%] max-w-lg">
             <h3 className="font-semibold text-gray-800 mb-2">Select Business Location</h3>
             <MapPicker
-              onSelect={(addr, lat, lng) => {
+              onSelect={(addr) => {
                 setForm({ ...form, businessAddress: addr });
-                setCoordinates({ lat, lng });
               }}
               initialAddress={form.businessAddress}
             />
