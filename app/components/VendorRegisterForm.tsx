@@ -9,7 +9,6 @@ import MapPicker from "./MapPicker";
 export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => void }) {
   const router = useRouter();
 
-  // ------------------- STATE -------------------
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -29,12 +28,12 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
   const [showMap, setShowMap] = useState(false);
   const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
 
-  // ------------------- FILE PICKER -------------------
+  // ------------------- PICK FILE -------------------
   function pickFile(callback: (f: File) => void, useCamera = false) {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*,.pdf";
-    if (useCamera) input.capture = "environment"; // open camera
+    if (useCamera) input.capture = "environment";
     input.onchange = (e: any) => {
       const file = e.target.files[0];
       if (file) callback(file);
@@ -48,35 +47,57 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
     setError("");
     setSuccess("");
 
-    if (!form.firstName || !form.businessName || !avatar || !leseni || !form.nidaNumber) {
+    if (!form.firstName || !form.lastName || !form.businessName || !avatar || !leseni) {
       setError("Please fill all required fields and upload required files.");
       return;
     }
 
     setLoading(true);
-    try {
-      const payload: any = {
-        ...form,
-        avatar,
-        businessLicense: leseni,
-      };
 
-      if (coordinates) {
-        payload.latitude = coordinates.lat;
-        payload.longitude = coordinates.lng;
+    try {
+      // FORM DATA (VERY IMPORTANT!)
+      const fd = new FormData();
+
+      // Required for backend
+      fd.append("name", `${form.firstName} ${form.lastName}`);
+      fd.append("email", form.email);
+      fd.append("password", form.password);
+      fd.append("password_confirmation", form.password);
+      fd.append("phone", form.phone);
+      fd.append("role", "vendor");
+
+      // Vendor-specific fields
+      fd.append("business_name", form.businessName);
+      fd.append("business_address", form.businessAddress);
+
+      // Files
+      fd.append("avatar", avatar);
+      fd.append("business_license", leseni);
+
+      // NIDA Number
+      if (form.nidaNumber) {
+        fd.append("nida_number", form.nidaNumber);
       }
 
-      const res = await AuthService.registerVendor(payload);
-      console.log("✅ Vendor registered:", res);
+      // Coordinates
+      if (coordinates) {
+        fd.append("latitude", String(coordinates.lat));
+        fd.append("longitude", String(coordinates.lng));
+      }
 
+      const res = await AuthService.registerVendor(fd);
+
+      console.log("✅ Vendor registered:", res);
       setSuccess("Vendor registered successfully!");
+
       setTimeout(() => {
         router.push("/auth/login");
       }, 1500);
 
       if (onSuccess) onSuccess();
     } catch (err: any) {
-      setError(err.response?.data?.message || "Vendor registration failed.");
+      console.log(err);
+      setError(err?.response?.data?.message || "Vendor registration failed.");
     } finally {
       setLoading(false);
     }
@@ -89,29 +110,17 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       <div className="flex flex-col items-center mb-4">
         <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center cursor-pointer overflow-hidden">
           {avatar ? (
-            <img
-              src={URL.createObjectURL(avatar)}
-              alt="avatar"
-              className="object-cover w-full h-full"
-            />
+            <img src={URL.createObjectURL(avatar)} alt="avatar" className="object-cover w-full h-full" />
           ) : (
             <span className="text-gray-600 text-sm">📷</span>
           )}
         </div>
 
         <div className="flex gap-3 mt-2">
-          <button
-            type="button"
-            onClick={() => pickFile((f) => setAvatar(f))}
-            className="text-yellow-600 text-xs underline"
-          >
+          <button type="button" onClick={() => pickFile((f) => setAvatar(f))} className="text-yellow-600 text-xs underline">
             Upload
           </button>
-          <button
-            type="button"
-            onClick={() => pickFile((f) => setAvatar(f), true)}
-            className="text-green-600 text-xs underline"
-          >
+          <button type="button" onClick={() => pickFile((f) => setAvatar(f), true)} className="text-green-600 text-xs underline">
             Scan
           </button>
         </div>
@@ -121,16 +130,8 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
 
       {/* Basic Info */}
       <div className="grid grid-cols-2 gap-3">
-        <InputCardField
-          label="First Name *"
-          value={form.firstName}
-          onChange={(v) => setForm({ ...form, firstName: v })}
-        />
-        <InputCardField
-          label="Last Name *"
-          value={form.lastName}
-          onChange={(v) => setForm({ ...form, lastName: v })}
-        />
+        <InputCardField label="First Name *" value={form.firstName} onChange={(v) => setForm({ ...form, firstName: v })} />
+        <InputCardField label="Last Name *" value={form.lastName} onChange={(v) => setForm({ ...form, lastName: v })} />
       </div>
 
       <InputCardField
@@ -139,7 +140,6 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
         onChange={(v) => setForm({ ...form, businessName: v })}
       />
 
-      {/* Map Picker Trigger */}
       <div className="relative">
         <InputCardField
           label="Business Address *"
@@ -157,73 +157,37 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
         </button>
       </div>
 
-      <InputCardField
-        label="Email *"
-        type="email"
-        placeholder="example@email.com"
-        value={form.email}
-        onChange={(v) => setForm({ ...form, email: v })}
-      />
+      <InputCardField label="Email *" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
 
-      <InputCardField
-        label="Password *"
-        type="password"
-        placeholder="Minimum 8 characters"
-        value={form.password}
-        onChange={(v) => setForm({ ...form, password: v })}
-      />
+      <InputCardField label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
 
-      <InputCardField
-        label="Phone"
-        placeholder="+255XXXXXXXXX"
-        value={form.phone}
-        onChange={(v) => setForm({ ...form, phone: v })}
-      />
+      <InputCardField label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
 
       {/* Documents */}
       <div className="mt-3 space-y-3">
-        {/* Business License */}
         <div className="border rounded-lg p-3 flex justify-between items-center bg-white">
-          <span className="font-semibold text-sm">
-            {leseni ? leseni.name : "Leseni ya Biashara"}
-          </span>
+          <span className="font-semibold text-sm">{leseni ? leseni.name : "Business License"}</span>
           <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => pickFile((f) => setLeseni(f))}
-              className="text-yellow-600 text-sm underline"
-            >
+            <button type="button" onClick={() => pickFile((f) => setLeseni(f))} className="text-yellow-600 text-sm underline">
               Upload
             </button>
-            <button
-              type="button"
-              onClick={() => pickFile((f) => setLeseni(f), true)}
-              className="text-green-600 text-sm underline"
-            >
+            <button type="button" onClick={() => pickFile((f) => setLeseni(f), true)} className="text-green-600 text-sm underline">
               Scan
             </button>
           </div>
         </div>
 
-        {/* NIDA Number Only */}
         <InputCardField
           label="NIDA Number (20 digits) *"
-          placeholder="e.g. 12345678901234567890"
           value={form.nidaNumber}
           onChange={(v) => setForm({ ...form, nidaNumber: v })}
         />
       </div>
 
-      {/* Error & Success */}
-      {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
-      {success && <p className="text-green-600 text-sm mt-2">{success}</p>}
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {success && <p className="text-green-600 text-sm">{success}</p>}
 
-      {/* Submit */}
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-yellow-400 text-black font-bold py-3 rounded-xl mt-4 shadow"
-      >
+      <button type="submit" disabled={loading} className="w-full bg-yellow-400 text-black font-bold py-3 rounded-xl mt-4 shadow">
         {loading ? "Submitting..." : "Sign Up as Vendor"}
       </button>
 
@@ -231,9 +195,8 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       {showMap && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-4 w-[90%] max-w-lg">
-            <h3 className="font-semibold text-gray-800 mb-2">
-              Select Business Location
-            </h3>
+            <h3 className="font-semibold text-gray-800 mb-2">Select Business Location</h3>
+
             <MapPicker
               onSelect={(addr, lat, lng) => {
                 setForm({ ...form, businessAddress: addr });
@@ -241,12 +204,9 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
               }}
               initialAddress={form.businessAddress}
             />
+
             <div className="flex justify-end mt-3">
-              <button
-                type="button"
-                onClick={() => setShowMap(false)}
-                className="bg-yellow-500 px-4 py-2 rounded text-black font-semibold"
-              >
+              <button type="button" onClick={() => setShowMap(false)} className="bg-yellow-500 px-4 py-2 rounded text-black font-semibold">
                 Done
               </button>
             </div>
