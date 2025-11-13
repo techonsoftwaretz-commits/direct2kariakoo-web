@@ -23,6 +23,8 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
 
   const [avatar, setAvatar] = useState<File | null>(null);
   const [leseni, setLeseni] = useState<File | null>(null);
+  const [nidaDocument, setNidaDocument] = useState<File | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -34,7 +36,7 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*,.pdf";
-    if (useCamera) input.capture = "environment"; // open camera
+    if (useCamera) input.capture = "environment";
     input.onchange = (e: any) => {
       const file = e.target.files[0];
       if (file) callback(file);
@@ -48,34 +50,62 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
     setError("");
     setSuccess("");
 
-    if (!form.firstName || !form.businessName || !avatar || !leseni || !form.nidaNumber) {
+    // Basic check
+    if (!form.firstName || !form.businessName || !avatar || !leseni) {
       setError("Please fill all required fields and upload required files.");
       return;
     }
 
+    // NIDA: must provide either number or file
+    if (!form.nidaNumber && !nidaDocument) {
+      setError("Please provide either NIDA number or NIDA document.");
+      return;
+    }
+
+    // Prepare FormData
+    const payload = new FormData();
+
+    payload.append("name", form.firstName + " " + form.lastName);
+    payload.append("email", form.email);
+    payload.append("password", form.password);
+    payload.append("password_confirmation", form.password);
+    payload.append("phone", form.phone);
+    payload.append("role", "vendor");
+
+    payload.append("business_name", form.businessName);
+    payload.append("business_address", form.businessAddress);
+
+    payload.append("avatar", avatar);
+    payload.append("business_license", leseni);
+
+    if (form.nidaNumber) {
+      payload.append("nida_number", form.nidaNumber);
+    }
+
+    if (nidaDocument) {
+      payload.append("nida_document", nidaDocument);
+    }
+
+    if (coordinates) {
+      payload.append("latitude", String(coordinates.lat));
+      payload.append("longitude", String(coordinates.lng));
+    }
+
     setLoading(true);
     try {
-      const payload: any = {
-        ...form,
-        avatar,
-        businessLicense: leseni,
-      };
-
-      if (coordinates) {
-        payload.latitude = coordinates.lat;
-        payload.longitude = coordinates.lng;
-      }
-
       const res = await AuthService.registerVendor(payload);
       console.log("✅ Vendor registered:", res);
 
       setSuccess("Vendor registered successfully!");
+
       setTimeout(() => {
         router.push("/auth/login");
       }, 1500);
 
       if (onSuccess) onSuccess();
+
     } catch (err: any) {
+      console.log(err);
       setError(err.response?.data?.message || "Vendor registration failed.");
     } finally {
       setLoading(false);
@@ -85,33 +115,22 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
   // ------------------- UI -------------------
   return (
     <form onSubmit={handleSubmit}>
+      
       {/* Profile Photo */}
       <div className="flex flex-col items-center mb-4">
         <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center cursor-pointer overflow-hidden">
           {avatar ? (
-            <img
-              src={URL.createObjectURL(avatar)}
-              alt="avatar"
-              className="object-cover w-full h-full"
-            />
+            <img src={URL.createObjectURL(avatar)} alt="avatar" className="object-cover w-full h-full" />
           ) : (
             <span className="text-gray-600 text-sm">📷</span>
           )}
         </div>
 
         <div className="flex gap-3 mt-2">
-          <button
-            type="button"
-            onClick={() => pickFile((f) => setAvatar(f))}
-            className="text-yellow-600 text-xs underline"
-          >
+          <button type="button" onClick={() => pickFile((f) => setAvatar(f))} className="text-yellow-600 text-xs underline">
             Upload
           </button>
-          <button
-            type="button"
-            onClick={() => pickFile((f) => setAvatar(f), true)}
-            className="text-green-600 text-xs underline"
-          >
+          <button type="button" onClick={() => pickFile((f) => setAvatar(f), true)} className="text-green-600 text-xs underline">
             Scan
           </button>
         </div>
@@ -160,7 +179,6 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       <InputCardField
         label="Email *"
         type="email"
-        placeholder="example@email.com"
         value={form.email}
         onChange={(v) => setForm({ ...form, email: v })}
       />
@@ -168,50 +186,57 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       <InputCardField
         label="Password *"
         type="password"
-        placeholder="Minimum 8 characters"
         value={form.password}
         onChange={(v) => setForm({ ...form, password: v })}
       />
 
       <InputCardField
-        label="Phone"
+        label="Phone *"
         placeholder="+255XXXXXXXXX"
         value={form.phone}
         onChange={(v) => setForm({ ...form, phone: v })}
       />
 
       {/* Documents */}
-      <div className="mt-3 space-y-3">
+      <div className="mt-3 space-y-4">
+        
         {/* Business License */}
         <div className="border rounded-lg p-3 flex justify-between items-center bg-white">
           <span className="font-semibold text-sm">
-            {leseni ? leseni.name : "Leseni ya Biashara"}
+            {leseni ? leseni.name : "Leseni ya Biashara *"}
           </span>
           <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => pickFile((f) => setLeseni(f))}
-              className="text-yellow-600 text-sm underline"
-            >
+            <button type="button" onClick={() => pickFile((f) => setLeseni(f))} className="text-yellow-600 text-sm underline">
               Upload
             </button>
-            <button
-              type="button"
-              onClick={() => pickFile((f) => setLeseni(f), true)}
-              className="text-green-600 text-sm underline"
-            >
+            <button type="button" onClick={() => pickFile((f) => setLeseni(f), true)} className="text-green-600 text-sm underline">
               Scan
             </button>
           </div>
         </div>
 
-        {/* NIDA Number Only */}
+        {/* NIDA Number OR Document */}
         <InputCardField
-          label="NIDA Number (20 digits) *"
+          label="NIDA Number (20 digits)"
           placeholder="e.g. 12345678901234567890"
           value={form.nidaNumber}
           onChange={(v) => setForm({ ...form, nidaNumber: v })}
         />
+
+        <div className="border rounded-lg p-3 flex justify-between items-center bg-white">
+          <span className="font-semibold text-sm">
+            {nidaDocument ? nidaDocument.name : "NIDA Document (Optional)"}
+          </span>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => pickFile((f) => setNidaDocument(f))} className="text-yellow-600 text-sm underline">
+              Upload
+            </button>
+            <button type="button" onClick={() => pickFile((f) => setNidaDocument(f), true)} className="text-green-600 text-sm underline">
+              Scan
+            </button>
+          </div>
+        </div>
+
       </div>
 
       {/* Error & Success */}
@@ -231,9 +256,7 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
       {showMap && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-4 w-[90%] max-w-lg">
-            <h3 className="font-semibold text-gray-800 mb-2">
-              Select Business Location
-            </h3>
+            <h3 className="font-semibold text-gray-800 mb-2">Select Business Location</h3>
             <MapPicker
               onSelect={(addr, lat, lng) => {
                 setForm({ ...form, businessAddress: addr });
@@ -253,6 +276,7 @@ export default function VendorRegisterForm({ onSuccess }: { onSuccess?: () => vo
           </div>
         </div>
       )}
+
     </form>
   );
 }
