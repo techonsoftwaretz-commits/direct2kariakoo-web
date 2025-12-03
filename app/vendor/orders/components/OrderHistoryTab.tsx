@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calendar, Phone, BarChart3 } from "lucide-react";
+import { Calendar, Phone, BarChart3, MapPin } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
 /* 🌟 Vendor Order History — Persistent Cache + Background Refresh            */
@@ -57,6 +57,7 @@ export default function OrderHistoryTab() {
       const completed = allOrders.filter(
         (o: any) => o.status?.toLowerCase() === "completed"
       );
+
       setHistory(completed);
 
       const total = completed.reduce(
@@ -65,7 +66,7 @@ export default function OrderHistoryTab() {
       );
       setTotalSales(total);
 
-      // ✅ Cache
+      // Save to cache
       localStorage.setItem(
         CACHE_KEY,
         JSON.stringify({ history: completed, totalSales: total })
@@ -79,9 +80,6 @@ export default function OrderHistoryTab() {
     }
   };
 
-  /* -------------------------------------------------------------------------- */
-  /* 💰 Format Helper                                                          */
-  /* -------------------------------------------------------------------------- */
   const formatMoney = (value: number): string =>
     value.toLocaleString("en-US", {
       minimumFractionDigits: 2,
@@ -158,6 +156,13 @@ export default function OrderHistoryTab() {
             ? product.images[0]
             : product.images?.[0]?.image;
 
+        // 🔥 SAFE ADDRESS RENDERING
+        const buyerAddress = buyer?.address
+          ? typeof buyer.address === "object"
+            ? buyer.address.address ?? "No address provided"
+            : buyer.address
+          : "No address provided";
+
         return (
           <div
             key={order.id}
@@ -205,10 +210,11 @@ export default function OrderHistoryTab() {
                 </div>
 
                 <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-full capitalize">
-                  {order.status}
+                  Completed
                 </span>
               </div>
 
+              {/* DATE + TOTAL */}
               <div className="flex justify-between items-center mt-2">
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                   <Calendar className="w-3.5 h-3.5" />
@@ -218,6 +224,12 @@ export default function OrderHistoryTab() {
                 <div className="text-sm font-bold text-teal-700">
                   TZS {formatMoney(Number(order.total))}
                 </div>
+              </div>
+
+              {/* 📍 USER DELIVERY LOCATION */}
+              <div className="text-xs text-gray-600 mt-2 flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-teal-600" />
+                {buyerAddress}
               </div>
             </div>
           </div>

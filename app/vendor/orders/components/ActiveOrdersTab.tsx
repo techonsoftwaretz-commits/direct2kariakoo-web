@@ -181,6 +181,53 @@ export default function ActiveOrdersTab() {
     );
 
   /* -------------------------------------------------------------------------- */
+  /* ---------------- Helper: open address in Google Maps --------------------- */
+  /* -------------------------------------------------------------------------- */
+  const tryGetCoords = (addrObj: any): { lat?: number; lng?: number } | null => {
+    if (!addrObj || typeof addrObj !== "object") return null;
+    // common keys
+    const lat = addrObj.lat ?? addrObj.latitude ?? addrObj.lat_value ?? addrObj.latlng?.lat;
+    const lng = addrObj.lng ?? addrObj.longitude ?? addrObj.lng_value ?? addrObj.latlng?.lng;
+    if (lat == null || lng == null) return null;
+    const nLat = Number(lat);
+    const nLng = Number(lng);
+    if (isNaN(nLat) || isNaN(nLng)) return null;
+    return { lat: nLat, lng: nLng };
+  };
+
+  const openInGoogleMaps = (buyerAddress: any) => {
+    try {
+      // If address is object with lat/lng, open directions to coords
+      const coords = typeof buyerAddress === "object" ? tryGetCoords(buyerAddress) : null;
+
+      let url = "";
+      if (coords && coords.lat != null && coords.lng != null) {
+        // Open directions to coordinates (best for routing)
+        url = `https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`;
+      } else {
+        // Fallback: search the address text or "address.address"
+        const text =
+          typeof buyerAddress === "object"
+            ? buyerAddress.address ?? JSON.stringify(buyerAddress)
+            : buyerAddress ?? "";
+        url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(text)}`;
+      }
+
+      // open in new tab safely
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("Open maps error:", err);
+      // fallback to search
+      const fallback = typeof buyerAddress === "object" ? buyerAddress.address ?? "" : buyerAddress ?? "";
+      window.open(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fallback)}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    }
+  };
+
+  /* -------------------------------------------------------------------------- */
   /* 💫 Active Orders UI                                                       */
   /* -------------------------------------------------------------------------- */
   return (
@@ -203,6 +250,13 @@ export default function ActiveOrdersTab() {
           order.status === "processing"
             ? "In Progress"
             : order.status.charAt(0).toUpperCase() + order.status.slice(1);
+
+        // SAFE address text to show
+        const addressText = buyer?.address
+          ? typeof buyer.address === "object"
+            ? buyer.address.address ?? "No address provided"
+            : buyer.address
+          : "No address provided";
 
         return (
           <div
@@ -273,9 +327,17 @@ export default function ActiveOrdersTab() {
                 </div>
               </div>
 
+              {/* Address: clickable to open Google Maps */}
               <div className="text-xs text-gray-600 mt-1 flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-teal-600" />
-                {buyer.address || "No address provided"}
+                <button
+                  type="button"
+                  onClick={() => openInGoogleMaps(buyer?.address)}
+                  className="text-left truncate underline-offset-2 hover:underline focus:outline-none"
+                  title="Open in Google Maps"
+                >
+                  {addressText}
+                </button>
               </div>
 
               {/* ☎️ Call Buyer */}

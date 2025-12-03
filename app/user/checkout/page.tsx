@@ -23,14 +23,13 @@ export default function CheckoutPage() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [isLoadingVendors, setIsLoadingVendors] = useState(false);
 
+  const [userAddress, setUserAddress] = useState<any>(null);
+  const [addressLoading, setAddressLoading] = useState(true);
+
   const [networks] = useState(["M-Pesa", "Airtel Money", "Tigo Pesa", "HaloPesa"]);
   const [selectedNetwork, setSelectedNetwork] = useState("M-Pesa");
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL;
-  const businessName = "Direct2Kariakoo";
-
-  // Cache vendors to prevent refetch
-  const cachedVendors = typeof window !== "undefined" ? sessionStorage.getItem("vendors_cache") : null;
 
   /* -------------------------------------------------------------------------- */
   /* 🖥️ Responsive detection                                                    */
@@ -41,6 +40,54 @@ export default function CheckoutPage() {
     window.addEventListener("resize", updateLayout);
     return () => window.removeEventListener("resize", updateLayout);
   }, []);
+
+  /* -------------------------------------------------------------------------- */
+  /* 📍 Fetch User Address                                                      */
+  /* -------------------------------------------------------------------------- */
+  useEffect(() => {
+    const fetchAddress = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+          router.push("/user/login");
+          return;
+        }
+
+        const meRes = await axios.get(`${apiBaseUrl}/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        let addressData = meRes.data.address;
+
+        if (typeof addressData === "string") {
+            try {
+                addressData = JSON.parse(addressData);
+            } catch (e) {
+                addressData = null;
+            }
+        }
+
+        setUserAddress(addressData);
+
+      } catch (err) {
+        console.error("❌ Failed to fetch address:", err);
+      } finally {
+        setAddressLoading(false);
+      }
+    };
+
+    fetchAddress();
+  }, [apiBaseUrl, router]);
+
+  /* -------------------------------------------------------------------------- */
+  /* ❗ BLOCK Checkout if No Address (after fetching)                           */
+  /* -------------------------------------------------------------------------- */
+  useEffect(() => {
+    if (!addressLoading && !userAddress) {
+      alert("Please add your delivery address first.");
+      router.push("/user/address");
+    }
+  }, [addressLoading, userAddress, router]);
 
   /* -------------------------------------------------------------------------- */
   /* 🛒 Fetch Cart                                                              */
@@ -77,14 +124,9 @@ export default function CheckoutPage() {
     if (tab !== "manual" || !cartItems.length) return;
 
     const fetchVendors = async () => {
-      // If cached vendors exist, show them immediately
-      if (cachedVendors) {
-        setVendorGroups(JSON.parse(cachedVendors));
-        return;
-      }
-
       try {
         setIsLoadingVendors(true);
+
         const itemsPayload = cartItems.map((item) => ({
           product_id: item.product_id || item.product?.id,
           quantity: item.quantity,
@@ -98,7 +140,6 @@ export default function CheckoutPage() {
 
         const data = res.data.vendors || [];
         setVendorGroups(data);
-        sessionStorage.setItem("vendors_cache", JSON.stringify(data));
       } catch (err: any) {
         console.error("❌ Failed to fetch vendor groups:", err.response?.data || err.message);
         setVendorGroups([]);
@@ -130,6 +171,12 @@ export default function CheckoutPage() {
   /* 💰 Payment Logic                                                           */
   /* -------------------------------------------------------------------------- */
   const handlePayment = async (isManualConfirm = false) => {
+    if (!userAddress) {
+      alert("Please add your address before checkout.");
+      router.push("/user/address");
+      return;
+    }
+
     const token = localStorage.getItem("token");
     if (!token) return router.push("/user/login");
 
@@ -150,9 +197,11 @@ export default function CheckoutPage() {
           { phone, provider: selectedNetwork, items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        alert("Payment initiated! Confirm on your mobile device.");
+        alert("Payment initiated!");
         clearCartAndGo();
-      } else if (tab === "card") {
+      }
+
+      if (tab === "card") {
         if (!cardNumber || !expiry || !cvv || !name)
           return alert("Please fill all card details");
 
@@ -168,17 +217,17 @@ export default function CheckoutPage() {
           },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-
         alert("Card payment successful!");
         clearCartAndGo();
-      } else if (tab === "manual" && isManualConfirm) {
+      }
+
+      if (tab === "manual" && isManualConfirm) {
         await axios.post(
           `${apiBaseUrl}/checkout/confirm-manual`,
           { total, reference: "ManualConfirm", items: itemsPayload },
           { headers: { Authorization: `Bearer ${token}` } }
         );
-
-        alert("Manual payment confirmed. Orders placed successfully!");
+        alert("Manual payment confirmed!");
         clearCartAndGo();
       }
     } catch (err: any) {
@@ -212,8 +261,16 @@ export default function CheckoutPage() {
   };
 
   /* -------------------------------------------------------------------------- */
-  /* ✨ Render                                                                  */
+  /* ✨ RENDER UI                                                               */
   /* -------------------------------------------------------------------------- */
+  if (addressLoading) {
+    return (
+      <div className="p-10 text-center text-gray-600">
+        Loading your address...
+      </div>
+    );
+  }
+
   return (
     <div className="bg-gray-50 min-h-screen">
       {isDesktop && <Header onCategorySelect={() => {}} onSubcategorySelect={() => {}} />}
@@ -234,16 +291,23 @@ export default function CheckoutPage() {
       <div className="max-w-7xl mx-auto px-4 py-10 flex flex-col lg:flex-row gap-8">
         {/* LEFT */}
         <div className="flex-1 space-y-8">
+
           {/* Address */}
           <section className="bg-white rounded-xl p-6 shadow-sm">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-lg font-semibold text-gray-800">Delivery Address</h3>
-              <button className="text-yellow-600 text-sm font-medium hover:underline">
-                + Add new address
+
+              {/* FIXED BUTTON */}
+              <button
+                onClick={() => router.push("/user/address")}
+                className="text-yellow-600 text-sm font-medium hover:underline"
+              >
+                {userAddress ? "Edit" : "+ Add Address"}
               </button>
             </div>
+
             <p className="text-sm text-gray-600">
-              Use your default address or add a new one.
+            {userAddress?.address ?? "No address saved."}
             </p>
           </section>
 

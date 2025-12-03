@@ -57,15 +57,28 @@ export default function ProductBottomBar({
       router.push("/user/login");
       return;
     }
-
-    // ✅ Store single product checkout info
-    const buyNowItem = [{ product_id: productId, quantity: 1 }];
-    localStorage.setItem("checkout_items", JSON.stringify(buyNowItem));
-    localStorage.setItem("checkout_total", String(price));
-
-    router.push("/user/checkout?buyNow=true");
+  
+    try {
+      setLoading(true);
+  
+      const res = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/cart/add`,
+        { product_id: productId, quantity: 1 },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+  
+      const updatedItems = res.data.items || res.data.cart?.items || [];
+      updateCartCache(updatedItems);
+  
+      router.push("/user/checkout");
+    } catch (err) {
+      console.error("❌ Buy now error:", err);
+      alert("Failed to proceed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
-
+  
   /* -------------------------------------------------------------------------- */
   /* 🖥️ UI */
   /* -------------------------------------------------------------------------- */
