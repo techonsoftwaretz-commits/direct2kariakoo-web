@@ -7,9 +7,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
     remotePatterns: [
-      { protocol: "https", hostname: "api.direct2kariakoo.com", pathname: "/**" },
-      { protocol: "http", hostname: "127.0.0.1", port: "8000", pathname: "/**" },
-      { protocol: "http", hostname: "localhost", port: "8000", pathname: "/**" },
+      {
+        protocol: "https",
+        hostname: "api.direct2kariakoo.com",
+        pathname: "/**",
+      },
     ],
   },
 
@@ -18,7 +20,7 @@ const nextConfig = {
 
   trailingSlash: true,
 
-  // ❌ output: "export"  ← REMOVED (THIS FIXES IPHONE)
+  // 🚫 DO NOT USE output: "export" ON VERCEL
 
   compiler: {
     removeConsole: process.env.NODE_ENV === "production",
