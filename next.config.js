@@ -7,7 +7,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
     remotePatterns: [
-      { protocol: "https", hostname: "direct2kariakoo.co.tz", pathname: "/**" },
+      { protocol: "https", hostname: "api.direct2kariakoo.com", pathname: "/**" },
       { protocol: "http", hostname: "127.0.0.1", port: "8000", pathname: "/**" },
       { protocol: "http", hostname: "localhost", port: "8000", pathname: "/**" },
     ],

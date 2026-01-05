@@ -4,7 +4,8 @@ import axios from "axios";
 // ✅ Debug which baseURL is being used
 // ============================================================
 const base =
-  process.env.NEXT_PUBLIC_API_URL || "https://direct2kariakoo.co.tz/api";
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://api.direct2kariakoo.com/api";
 
 console.log("🌍 Using API Base URL:", base);
 

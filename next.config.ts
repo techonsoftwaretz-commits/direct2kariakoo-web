@@ -10,7 +10,7 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "direct2kariakoo.co.tz",
+        hostname: "api.direct2kariakoo.com",
         pathname: "/**",
       },
       {
